@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="MODE Stock">
 <title>MODE — Gestion de Stock</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&display=swap');
 :root {
@@ -70,6 +71,8 @@ body{background:var(--white);color:var(--black);font-family:var(--sans);font-wei
 
 /* ══ HOME PAGE ══ */
 .home-hero{padding:24px 20px 16px;background:linear-gradient(180deg,var(--off) 0%,var(--white) 100%);border-bottom:var(--bdr-l)}
+.ver-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border:1px solid var(--gold);border-radius:999px;color:var(--gold);font-size:8px;letter-spacing:.28em;text-transform:uppercase;background:var(--white)}
+.ver-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--gold)}
 .home-greeting{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:var(--warm);margin-bottom:6px}
 .home-name{font-family:var(--serif);font-size:28px;line-height:1.1;margin-bottom:8px}
 .home-name em{font-style:italic;color:var(--gold)}
@@ -553,6 +556,7 @@ body{background:var(--white);color:var(--black);font-family:var(--sans);font-wei
 <!-- ══ HOME ══ -->
 <div class="view active" id="view-home">
   <div class="home-hero" style="padding:14px 20px 12px">
+    <span class="ver-badge" id="home-version-badge">Version 2</span>
     <div id="home-greeting" style="display:none"></div>
     <div id="home-name" style="display:none"></div>
     <div id="home-depot-name" style="display:none"></div>
@@ -952,6 +956,10 @@ body{background:var(--white);color:var(--black);font-family:var(--sans);font-wei
   <div id="photo-error" style="display:none;padding:20px">
     <div style="padding:16px;background:var(--redbg);border:1px solid var(--red);font-size:11px;color:var(--red)" id="photo-error-msg"></div>
     <button class="btn btn-gray btn-full" style="margin-top:12px" onclick="resetPhotoAnalysis()">Réessayer</button>
+    <button class="btn btn-gray btn-full" style="margin-top:8px" onclick="configureApiKey()">Configurer la clé API</button>
+  </div>
+  <div style="padding:0 20px 20px;text-align:center">
+    <button onclick="configureApiKey()" style="background:none;border:none;font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--warm);cursor:pointer;text-decoration:underline">Configurer la clé API Anthropic</button>
   </div>
 </div>
 
@@ -1197,12 +1205,17 @@ body{background:var(--white);color:var(--black);font-family:var(--sans);font-wei
 const DB_KEY='dior_v4';
 ['dior_v1','dior_v2','dior_v3','stockpieces_v2'].forEach(k=>{try{if(localStorage.getItem(k))localStorage.removeItem(k);}catch(e){}});
 
+// Compteur d'erreurs JS non interceptées (diagnostic + assertions E2E)
+window.__jsErrors=[];
+window.addEventListener('error',e=>{window.__jsErrors.push(String(e.message||e));console.error('[MODE]',e.message);});
+window.addEventListener('unhandledrejection',e=>{window.__jsErrors.push(String(e.reason||e));});
+
 function loadDB(){
   try{
     const r=localStorage.getItem(DB_KEY);
     if(!r)return seed();
     const d=JSON.parse(r);
-    if(!d.audit||!d.locations||Object.keys(d.depots||{}).length<2){localStorage.removeItem(DB_KEY);return seed();}
+    if(!d.audit||!d.locations||!d.users||Object.keys(d.depots||{}).length<1){localStorage.removeItem(DB_KEY);return seed();}
     if(!d.audit)d.audit=[];if(!d.locations)d.locations={};
     if(!d.transfers)d.transfers=[];if(!d.history)d.history=[];
     if(!d.stocks)d.stocks={};if(!d.articles)d.articles={};
@@ -1211,7 +1224,7 @@ function loadDB(){
     return d;
   }catch(e){return seed();}
 }
-function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){console.error('save failed',e);}}
+function saveDB(){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){console.error('save failed',e);toast('⚠ Sauvegarde impossible — stockage plein ou indisponible');}}
 
 function seed(){
   const demo=JSON.parse('{"articles":{"3700089690011":{"ean":"3700089690011","name":"Bandoulière cuir naturel 120cm","family":"Bandoulières","ref":"BND-CN-120","price":18.5,"threshold":15,"photo":"","locations":{"xaji0y6dpbhsahx":"1t2tala753lc58d","thv3a3zmf8mdd4v":"j2qp89uzfk8ut0c"}},"3700089690012":{"ean":"3700089690012","name":"Bandoulière chaîne dorée 110cm","family":"Bandoulières","ref":"BND-CD-110","price":24.0,"threshold":10,"photo":"","locations":{"xaji0y6dpbhsahx":"rc11ertj5pht0hl","thv3a3zmf8mdd4v":"vs4f8cgvyie6ivw","30t9nt3w5uzbikc":"0lvsnujza7tz0yn"}},"3700089690013":{"ean":"3700089690013","name":"Bandoulière tressée havane 100cm","family":"Bandoulières","ref":"BND-TH-100","price":21.0,"threshold":8,"photo":"","locations":{"xaji0y6dpbhsahx":"9xpseimvihcwi64","thv3a3zmf8mdd4v":"pvs7hzioykl1cq9","30t9nt3w5uzbikc":"cxll4zklookep7y"}},"4006381333901":{"ean":"4006381333901","name":"Bouton métal doré Ø18mm","family":"Boutons","ref":"BTN-MD-18","price":1.2,"threshold":30,"photo":"","locations":{"xaji0y6dpbhsahx":"ciyhe7ur23gdppq","thv3a3zmf8mdd4v":"9chj755nf4zw9xa"}},"4006381333902":{"ean":"4006381333902","name":"Bouton nacre Ø12mm","family":"Boutons","ref":"BTN-NC-12","price":0.9,"threshold":50,"photo":"","locations":{"xaji0y6dpbhsahx":"0y9dom5igqpki7p","thv3a3zmf8mdd4v":"3kx7eedtjvzhwjr","30t9nt3w5uzbikc":"gdswm31yihair4c"}},"4006381333903":{"ean":"4006381333903","name":"Bouton corne Ø22mm","family":"Boutons","ref":"BTN-CO-22","price":2.4,"threshold":25,"photo":"","locations":{"xaji0y6dpbhsahx":"5tb94874frhocn9","thv3a3zmf8mdd4v":"64dpja1wj0tpac5","30t9nt3w5uzbikc":"owgzrixa11dpg8s"}},"4006381333904":{"ean":"4006381333904","name":"Bouton logo CD argenté Ø15mm","family":"Boutons","ref":"BTN-CD-15","price":3.8,"threshold":20,"photo":"","locations":{"xaji0y6dpbhsahx":"1t2tala753lc58d","thv3a3zmf8mdd4v":"6t4ufel6246hid2"}},"5706998051001":{"ean":"5706998051001","name":"Zip YKK 20cm – Noir","family":"Zips","ref":"ZIP-YKK-20N","price":1.6,"threshold":20,"photo":"","locations":{"xaji0y6dpbhsahx":"rc11ertj5pht0hl","thv3a3zmf8mdd4v":"5owf75935a0l725","30t9nt3w5uzbikc":"60rjiw1swjckjlt"}},"5706998051002":{"ean":"5706998051002","name":"Zip YKK 30cm – Camel","family":"Zips","ref":"ZIP-YKK-30C","price":1.9,"threshold":15,"photo":"","locations":{"xaji0y6dpbhsahx":"9xpseimvihcwi64","thv3a3zmf8mdd4v":"3j2d54i3qk2iagl","30t9nt3w5uzbikc":"eiyzcotohp6vz41"}},"5706998051003":{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","family":"Zips","ref":"ZIP-INV-40B","price":2.1,"threshold":12,"photo":"","locations":{"xaji0y6dpbhsahx":"ciyhe7ur23gdppq","thv3a3zmf8mdd4v":"j2qp89uzfk8ut0c"}},"5706998051004":{"ean":"5706998051004","name":"Zip métal laiton 25cm","family":"Zips","ref":"ZIP-ML-25","price":3.4,"threshold":10,"photo":"","locations":{"xaji0y6dpbhsahx":"0y9dom5igqpki7p","thv3a3zmf8mdd4v":"vs4f8cgvyie6ivw","30t9nt3w5uzbikc":"0lvsnujza7tz0yn"}},"8712100450001":{"ean":"8712100450001","name":"Fermoir clip laiton 25mm","family":"Fermoirs","ref":"FRM-CL-25","price":4.2,"threshold":10,"photo":"","locations":{"xaji0y6dpbhsahx":"5tb94874frhocn9","thv3a3zmf8mdd4v":"pvs7hzioykl1cq9","30t9nt3w5uzbikc":"cxll4zklookep7y"}},"8712100450002":{"ean":"8712100450002","name":"Fermoir tournette argent 18mm","family":"Fermoirs","ref":"FRM-TO-18","price":5.6,"threshold":8,"photo":"","locations":{"xaji0y6dpbhsahx":"1t2tala753lc58d","thv3a3zmf8mdd4v":"9chj755nf4zw9xa"}},"8712100450003":{"ean":"8712100450003","name":"Fermoir magnétique plat 20mm","family":"Fermoirs","ref":"FRM-MP-20","price":3.1,"threshold":12,"photo":"","locations":{"xaji0y6dpbhsahx":"rc11ertj5pht0hl","thv3a3zmf8mdd4v":"3kx7eedtjvzhwjr","30t9nt3w5uzbikc":"gdswm31yihair4c"}},"8712100450004":{"ean":"8712100450004","name":"Boucle réglable laiton 35mm","family":"Fermoirs","ref":"FRM-BR-35","price":2.8,"threshold":15,"photo":"","locations":{"xaji0y6dpbhsahx":"9xpseimvihcwi64","30t9nt3w5uzbikc":"owgzrixa11dpg8s"}},"3760170192801":{"ean":"3760170192801","name":"Anneau D métal doré 20mm","family":"Accessoires","ref":"ANN-DM-20","price":0.85,"threshold":40,"photo":"","locations":{"xaji0y6dpbhsahx":"ciyhe7ur23gdppq"}},"3760170192802":{"ean":"3760170192802","name":"Œillet pression Ø10mm – Or","family":"Accessoires","ref":"OEL-PR-10","price":0.6,"threshold":50,"photo":"","locations":{"xaji0y6dpbhsahx":"0y9dom5igqpki7p","30t9nt3w5uzbikc":"60rjiw1swjckjlt"}}},"stocks":{"xaji0y6dpbhsahx":{"3700089690011":68,"3700089690012":20,"3700089690013":3,"4006381333901":88,"4006381333902":82,"4006381333903":75,"4006381333904":0,"5706998051001":105,"5706998051002":79,"5706998051003":23,"5706998051004":95,"8712100450001":102,"8712100450002":79,"8712100450003":26,"8712100450004":61,"3760170192801":78,"3760170192802":61},"thv3a3zmf8mdd4v":{"3700089690011":76,"3700089690012":60,"3700089690013":64,"4006381333901":43,"4006381333902":43,"4006381333903":77,"4006381333904":58,"5706998051001":66,"5706998051002":31,"5706998051003":65,"5706998051004":2,"8712100450001":69,"8712100450002":38,"8712100450003":48,"8712100450004":0,"3760170192801":0,"3760170192802":0},"30t9nt3w5uzbikc":{"3700089690011":0,"3700089690012":24,"3700089690013":31,"4006381333901":0,"4006381333902":22,"4006381333903":6,"4006381333904":0,"5706998051001":15,"5706998051002":39,"5706998051003":0,"5706998051004":10,"8712100450001":13,"8712100450002":0,"8712100450003":29,"8712100450004":18,"3760170192801":0,"3760170192802":26}},"history":[{"ean":"5706998051002","name":"Zip YKK 30cm – Camel","type":"in","qty":4,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Marc Dubois","date":"2026-05-09T17:13:29","loc":"R1-A3-E3-C1"},{"ean":"8712100450003","name":"Fermoir magnétique plat 20mm","type":"in","qty":18,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-05-09T14:17:48","loc":"R1-A2-E2-C1"},{"ean":"4006381333902","name":"Bouton nacre Ø12mm","type":"in","qty":4,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-05-09T11:53:01","loc":"R2-A2-E1-C1"},{"ean":"3700089690013","name":"Bandoulière tressée havane 100cm","type":"out","qty":4,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-05-09T08:22:14","loc":"R1-A1-E3-C1"},{"ean":"4006381333901","name":"Bouton métal doré Ø18mm","type":"out","qty":7,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-05-08T18:38:51","loc":""},{"ean":"3700089690013","name":"Bandoulière tressée havane 100cm","type":"in","qty":10,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Marc Dubois","date":"2026-05-08T14:45:12","loc":"R1-A1-E3-C1"},{"ean":"3700089690011","name":"Bandoulière cuir naturel 120cm","type":"in","qty":13,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Administrateur","date":"2026-05-08T10:19:06","loc":"R1-A1-E1-C1"},{"ean":"3760170192802","name":"Œillet pression Ø10mm – Or","type":"in","qty":14,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Julie Laurent","date":"2026-05-07T18:23:04","loc":"R1-A3-E2-C1"},{"ean":"8712100450001","name":"Fermoir clip laiton 25mm","type":"in","qty":14,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Pierre Blanc","date":"2026-05-07T15:06:27","loc":"R1-A1-E3-C1"},{"ean":"5706998051002","name":"Zip YKK 30cm – Camel","type":"out","qty":2,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Marc Dubois","date":"2026-05-07T14:52:46","loc":"R1-A3-E3-C1"},{"ean":"5706998051001","name":"Zip YKK 20cm – Noir","type":"in","qty":13,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Administrateur","date":"2026-05-07T12:56:28","loc":"R1-A3-E2-C1"},{"ean":"5706998051002","name":"Zip YKK 30cm – Camel","type":"out","qty":8,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Administrateur","date":"2026-05-07T10:46:33","loc":"R1-A3-E3-C1"},{"ean":"5706998051002","name":"Zip YKK 30cm – Camel","type":"in","qty":7,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-05-06T13:17:56","loc":"R1-A3-E3-C1"},{"ean":"5706998051004","name":"Zip métal laiton 25cm","type":"in","qty":9,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Pierre Blanc","date":"2026-05-06T13:01:31","loc":"R2-A2-E1-C1"},{"ean":"8712100450004","name":"Boucle réglable laiton 35mm","type":"out","qty":7,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Sophie Martin","date":"2026-05-05T18:45:31","loc":"R1-A3-E1-C1"},{"ean":"8712100450004","name":"Boucle réglable laiton 35mm","type":"in","qty":4,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Julie Laurent","date":"2026-05-05T16:21:22","loc":""},{"ean":"8712100450001","name":"Fermoir clip laiton 25mm","type":"in","qty":14,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Administrateur","date":"2026-05-05T11:19:42","loc":"R1-A1-E3-C1"},{"ean":"8712100450003","name":"Fermoir magnétique plat 20mm","type":"out","qty":8,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Administrateur","date":"2026-05-05T09:15:46","loc":"R1-A2-E2-C1"},{"ean":"3700089690011","name":"Bandoulière cuir naturel 120cm","type":"transfer","qty":10,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Sophie Martin","date":"2026-05-04T18:00:00","note":"→ Atelier Lyon – Sellerie"},{"ean":"4006381333901","name":"Bouton métal doré Ø18mm","type":"transfer_in","qty":10,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Marc Dubois","date":"2026-05-04T18:00:00","note":"← Atelier Paris – Maroquinerie"},{"ean":"4006381333903","name":"Bouton corne Ø22mm","type":"out","qty":5,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-05-04T11:20:07","loc":"R2-A3-E1-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"out","qty":6,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-05-02T17:48:33","loc":"R2-A1-E1-C1"},{"ean":"3760170192801","name":"Anneau D métal doré 20mm","type":"in","qty":16,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Sophie Martin","date":"2026-05-02T12:44:08","loc":"R2-A1-E1-C1"},{"ean":"4006381333902","name":"Bouton nacre Ø12mm","type":"in","qty":18,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-05-02T10:19:00","loc":"R1-A2-E2-C1"},{"ean":"5706998051001","name":"Zip YKK 20cm – Noir","type":"out","qty":8,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Pierre Blanc","date":"2026-05-01T17:38:50","loc":"R1-A3-E2-C1"},{"ean":"4006381333903","name":"Bouton corne Ø22mm","type":"in","qty":16,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Julie Laurent","date":"2026-05-01T15:28:21","loc":"R2-A3-E1-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"in","qty":14,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-05-01T10:09:51","loc":"R2-A1-E1-C1"},{"ean":"8712100450002","name":"Fermoir tournette argent 18mm","type":"in","qty":2,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-05-01T09:52:04","loc":"R1-A2-E1-C1"},{"ean":"3700089690011","name":"Bandoulière cuir naturel 120cm","type":"in","qty":16,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Pierre Blanc","date":"2026-04-30T16:04:10","loc":"R1-A1-E1-C1"},{"ean":"8712100450003","name":"Fermoir magnétique plat 20mm","type":"in","qty":20,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Administrateur","date":"2026-04-30T12:55:37","loc":"R1-A2-E2-C1"},{"ean":"4006381333904","name":"Bouton logo CD argenté Ø15mm","type":"in","qty":6,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-04-30T09:48:13","loc":"R1-A3-E1-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"in","qty":15,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Julie Laurent","date":"2026-04-29T12:02:14","loc":""},{"ean":"5706998051002","name":"Zip YKK 30cm – Camel","type":"in","qty":7,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Administrateur","date":"2026-04-29T09:43:14","loc":"R1-A3-E3-C1"},{"ean":"3700089690013","name":"Bandoulière tressée havane 100cm","type":"in","qty":1,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Administrateur","date":"2026-04-28T17:16:01","loc":"R1-A3-E1-C1"},{"ean":"3700089690013","name":"Bandoulière tressée havane 100cm","type":"out","qty":6,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-04-28T16:31:28","loc":"R1-A1-E3-C1"},{"ean":"5706998051001","name":"Zip YKK 20cm – Noir","type":"out","qty":3,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Marc Dubois","date":"2026-04-28T14:07:34","loc":"R1-A3-E2-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"in","qty":17,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Pierre Blanc","date":"2026-04-28T09:29:44","loc":""},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"in","qty":15,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Administrateur","date":"2026-04-28T09:03:10","loc":""},{"ean":"3700089690012","name":"Bandoulière chaîne dorée 110cm","type":"in","qty":15,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Pierre Blanc","date":"2026-04-27T18:52:17","loc":"R1-A2-E1-C1"},{"ean":"5706998051001","name":"Zip YKK 20cm – Noir","type":"transfer","qty":5,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Marc Dubois","date":"2026-04-27T18:00:00","note":"→ Atelier Nice – Couture"},{"ean":"8712100450003","name":"Fermoir magnétique plat 20mm","type":"in","qty":16,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Pierre Blanc","date":"2026-04-27T12:11:37","loc":"R1-A2-E2-C1"},{"ean":"8712100450004","name":"Boucle réglable laiton 35mm","type":"in","qty":12,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-04-25T16:52:00","loc":""},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"out","qty":9,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Pierre Blanc","date":"2026-04-25T14:44:31","loc":""},{"ean":"5706998051004","name":"Zip métal laiton 25cm","type":"out","qty":6,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-04-25T13:26:21","loc":"R1-A1-E2-C1"},{"ean":"5706998051004","name":"Zip métal laiton 25cm","type":"in","qty":13,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Julie Laurent","date":"2026-04-25T08:29:05","loc":"R1-A1-E2-C1"},{"ean":"8712100450004","name":"Boucle réglable laiton 35mm","type":"in","qty":5,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-04-24T17:48:31","loc":"R1-A3-E1-C1"},{"ean":"3760170192801","name":"Anneau D métal doré 20mm","type":"in","qty":20,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Sophie Martin","date":"2026-04-24T12:28:56","loc":"R2-A1-E1-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"in","qty":3,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-04-24T11:45:10","loc":""},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"out","qty":8,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Julie Laurent","date":"2026-04-23T15:59:45","loc":""},{"ean":"4006381333901","name":"Bouton métal doré Ø18mm","type":"in","qty":5,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-04-23T11:53:58","loc":"R1-A2-E1-C1"},{"ean":"4006381333902","name":"Bouton nacre Ø12mm","type":"in","qty":11,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Administrateur","date":"2026-04-22T18:31:55","loc":"R1-A2-E2-C1"},{"ean":"4006381333902","name":"Bouton nacre Ø12mm","type":"in","qty":17,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Marc Dubois","date":"2026-04-22T15:15:29","loc":"R1-A2-E2-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"out","qty":10,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Julie Laurent","date":"2026-04-22T12:52:00","loc":""},{"ean":"5706998051002","name":"Zip YKK 30cm – Camel","type":"in","qty":17,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Julie Laurent","date":"2026-04-22T10:55:04","loc":"R1-A3-E3-C1"},{"ean":"8712100450003","name":"Fermoir magnétique plat 20mm","type":"out","qty":7,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Julie Laurent","date":"2026-04-21T17:24:14","loc":"R1-A2-E1-C1"},{"ean":"8712100450002","name":"Fermoir tournette argent 18mm","type":"out","qty":4,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Julie Laurent","date":"2026-04-21T16:48:34","loc":"R1-A2-E1-C1"},{"ean":"4006381333902","name":"Bouton nacre Ø12mm","type":"in","qty":19,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-04-21T14:42:50","loc":"R1-A2-E2-C1"},{"ean":"8712100450004","name":"Boucle réglable laiton 35mm","type":"in","qty":1,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Administrateur","date":"2026-04-20T13:55:06","loc":"R1-A3-E1-C1"},{"ean":"4006381333901","name":"Bouton métal doré Ø18mm","type":"in","qty":1,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Marc Dubois","date":"2026-04-18T18:45:55","loc":"R1-A2-E1-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"out","qty":2,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Sophie Martin","date":"2026-04-18T18:43:58","loc":"R2-A1-E1-C1"},{"ean":"3760170192801","name":"Anneau D métal doré 20mm","type":"in","qty":8,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-04-18T14:20:40","loc":""},{"ean":"8712100450002","name":"Fermoir tournette argent 18mm","type":"out","qty":9,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-04-18T13:39:44","loc":""},{"ean":"4006381333902","name":"Bouton nacre Ø12mm","type":"out","qty":5,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Pierre Blanc","date":"2026-04-18T10:26:55","loc":"R2-A2-E1-C1"},{"ean":"3760170192801","name":"Anneau D métal doré 20mm","type":"in","qty":9,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Marc Dubois","date":"2026-04-17T17:43:15","loc":""},{"ean":"4006381333903","name":"Bouton corne Ø22mm","type":"in","qty":13,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-04-17T11:33:26","loc":"R2-A3-E1-C1"},{"ean":"3700089690012","name":"Bandoulière chaîne dorée 110cm","type":"out","qty":3,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Julie Laurent","date":"2026-04-17T08:20:50","loc":"R1-A1-E2-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"out","qty":10,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Pierre Blanc","date":"2026-04-16T17:18:44","loc":"R2-A1-E1-C1"},{"ean":"3700089690011","name":"Bandoulière cuir naturel 120cm","type":"in","qty":6,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Julie Laurent","date":"2026-04-16T15:16:42","loc":"R1-A1-E1-C1"},{"ean":"3760170192801","name":"Anneau D métal doré 20mm","type":"out","qty":6,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-04-16T12:12:24","loc":"R2-A1-E1-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"in","qty":15,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Pierre Blanc","date":"2026-04-16T09:28:22","loc":""},{"ean":"3700089690012","name":"Bandoulière chaîne dorée 110cm","type":"out","qty":5,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Pierre Blanc","date":"2026-04-15T18:49:47","loc":"R1-A1-E2-C1"},{"ean":"8712100450001","name":"Fermoir clip laiton 25mm","type":"in","qty":5,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-04-15T11:38:51","loc":"R2-A3-E1-C1"},{"ean":"3700089690012","name":"Bandoulière chaîne dorée 110cm","type":"in","qty":12,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Pierre Blanc","date":"2026-04-14T18:06:57","loc":"R1-A1-E2-C1"},{"ean":"3760170192802","name":"Œillet pression Ø10mm – Or","type":"out","qty":5,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Julie Laurent","date":"2026-04-14T16:56:23","loc":"R1-A3-E2-C1"},{"ean":"5706998051003","name":"Zip invisible 40cm – Beige","type":"in","qty":5,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Pierre Blanc","date":"2026-04-14T10:05:58","loc":"R1-A1-E1-C1"},{"ean":"5706998051004","name":"Zip métal laiton 25cm","type":"in","qty":5,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Pierre Blanc","date":"2026-04-13T15:51:18","loc":"R2-A2-E1-C1"},{"ean":"8712100450001","name":"Fermoir clip laiton 25mm","type":"in","qty":20,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Marc Dubois","date":"2026-04-11T17:24:52","loc":"R2-A3-E1-C1"},{"ean":"5706998051001","name":"Zip YKK 20cm – Noir","type":"in","qty":15,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Sophie Martin","date":"2026-04-11T16:20:58","loc":"R1-A3-E2-C1"},{"ean":"8712100450002","name":"Fermoir tournette argent 18mm","type":"in","qty":13,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Julie Laurent","date":"2026-04-11T11:55:43","loc":""},{"ean":"4006381333901","name":"Bouton métal doré Ø18mm","type":"in","qty":9,"depotId":"thv3a3zmf8mdd4v","depotName":"Atelier Lyon – Sellerie","operator":"Julie Laurent","date":"2026-04-11T08:16:34","loc":"R1-A2-E1-C1"},{"ean":"8712100450003","name":"Fermoir magnétique plat 20mm","type":"out","qty":2,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Marc Dubois","date":"2026-04-10T18:47:44","loc":"R1-A2-E2-C1"},{"ean":"5706998051001","name":"Zip YKK 20cm – Noir","type":"out","qty":6,"depotId":"30t9nt3w5uzbikc","depotName":"Atelier Nice – Couture","operator":"Marc Dubois","date":"2026-04-10T15:07:06","loc":"R1-A3-E2-C1"},{"ean":"4006381333901","name":"Bouton métal doré Ø18mm","type":"in","qty":10,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie","operator":"Sophie Martin","date":"2026-04-10T12:41:26","loc":"R2-A1-E1-C1"}],"transfers":[{"id":"4w7kyhqin9n6xcj","ean":"3700089690011","name":"Bandoulière cuir naturel 120cm","qty":8,"fromDepotId":"xaji0y6dpbhsahx","fromDepotName":"Atelier Paris – Maroquinerie","toDepotId":"thv3a3zmf8mdd4v","toDepotName":"Atelier Lyon – Sellerie","operator":"Sophie Martin","date":"2026-05-07T18:00:00","status":"pending"},{"id":"883dhx8bm92h3tv","ean":"4006381333901","name":"Bouton métal doré Ø18mm","qty":25,"fromDepotId":"xaji0y6dpbhsahx","fromDepotName":"Atelier Paris – Maroquinerie","toDepotId":"30t9nt3w5uzbikc","toDepotName":"Atelier Nice – Couture","operator":"Julie Laurent","date":"2026-05-01T18:00:00","status":"done","receivedBy":"Pierre Blanc","receivedDate":"2026-05-02T18:00:00"},{"id":"3i12vj99t2d5em2","ean":"8712100450001","name":"Fermoir clip laiton 25mm","qty":15,"fromDepotId":"thv3a3zmf8mdd4v","fromDepotName":"Atelier Lyon – Sellerie","toDepotId":"30t9nt3w5uzbikc","toDepotName":"Atelier Nice – Couture","operator":"Marc Dubois","date":"2026-05-04T18:00:00","status":"done","receivedBy":"Pierre Blanc","receivedDate":"2026-05-05T18:00:00"}],"users":{"idkwnnhj7xvg0fn":{"id":"idkwnnhj7xvg0fn","name":"Administrateur","role":"admin","pin":"1234","depotId":"xaji0y6dpbhsahx"},"9xuy41ibljh75lx":{"id":"9xuy41ibljh75lx","name":"Sophie Martin","role":"manager","pin":"2345","depotId":"xaji0y6dpbhsahx"},"o6qjiujv6oh9sdb":{"id":"o6qjiujv6oh9sdb","name":"Marc Dubois","role":"manager","pin":"3456","depotId":"thv3a3zmf8mdd4v"},"dw2pcn9t84azytj":{"id":"dw2pcn9t84azytj","name":"Julie Laurent","role":"operator","pin":"4567","depotId":"xaji0y6dpbhsahx"},"xepq85jsg65kxvf":{"id":"xepq85jsg65kxvf","name":"Pierre Blanc","role":"operator","pin":"5678","depotId":"30t9nt3w5uzbikc"}},"depots":{"xaji0y6dpbhsahx":{"id":"xaji0y6dpbhsahx","name":"Atelier Paris – Maroquinerie","location":"Paris, 8e","code":"DEP-01"},"thv3a3zmf8mdd4v":{"id":"thv3a3zmf8mdd4v","name":"Atelier Lyon – Sellerie","location":"Lyon, 6e","code":"DEP-02"},"30t9nt3w5uzbikc":{"id":"30t9nt3w5uzbikc","name":"Atelier Nice – Couture","location":"Nice, Vieux","code":"DEP-03"}},"locations":{"1t2tala753lc58d":{"id":"1t2tala753lc58d","rack":"R1","allee":"A1","etagere":"E1","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Bandoulières courtes"},"rc11ertj5pht0hl":{"id":"rc11ertj5pht0hl","rack":"R1","allee":"A2","etagere":"E1","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Bandoulières longues"},"9xpseimvihcwi64":{"id":"9xpseimvihcwi64","rack":"R1","allee":"A3","etagere":"E1","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Boutons métal"},"ciyhe7ur23gdppq":{"id":"ciyhe7ur23gdppq","rack":"R2","allee":"A1","etagere":"E1","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Boutons nacre/corne"},"0y9dom5igqpki7p":{"id":"0y9dom5igqpki7p","rack":"R2","allee":"A2","etagere":"E1","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Zips noirs"},"5tb94874frhocn9":{"id":"5tb94874frhocn9","rack":"R2","allee":"A3","etagere":"E1","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Zips colorés"},"j2qp89uzfk8ut0c":{"id":"j2qp89uzfk8ut0c","rack":"R1","allee":"A1","etagere":"E1","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Bandoulières"},"vs4f8cgvyie6ivw":{"id":"vs4f8cgvyie6ivw","rack":"R1","allee":"A1","etagere":"E2","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Boutons"},"pvs7hzioykl1cq9":{"id":"pvs7hzioykl1cq9","rack":"R1","allee":"A1","etagere":"E3","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Zips"},"9chj755nf4zw9xa":{"id":"9chj755nf4zw9xa","rack":"R1","allee":"A2","etagere":"E1","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Fermoirs"},"3kx7eedtjvzhwjr":{"id":"3kx7eedtjvzhwjr","rack":"R1","allee":"A2","etagere":"E2","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Accessoires"},"64dpja1wj0tpac5":{"id":"64dpja1wj0tpac5","rack":"R1","allee":"A2","etagere":"E3","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Stock réserve"},"6t4ufel6246hid2":{"id":"6t4ufel6246hid2","rack":"R1","allee":"A3","etagere":"E1","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Entrées récentes"},"5owf75935a0l725":{"id":"5owf75935a0l725","rack":"R1","allee":"A3","etagere":"E2","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Sorties préparées"},"3j2d54i3qk2iagl":{"id":"3j2d54i3qk2iagl","rack":"R1","allee":"A3","etagere":"E3","case":"C1","depotId":"thv3a3zmf8mdd4v","desc":"Zone contrôle"},"58kxo9t7e8g8jdp":{"id":"58kxo9t7e8g8jdp","rack":"R1","allee":"A1","etagere":"E1","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Saisonniers"},"0lvsnujza7tz0yn":{"id":"0lvsnujza7tz0yn","rack":"R1","allee":"A1","etagere":"E2","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Collection"},"cxll4zklookep7y":{"id":"cxll4zklookep7y","rack":"R1","allee":"A1","etagere":"E3","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Accessoires fins"},"6wktakpuxqphr62":{"id":"6wktakpuxqphr62","rack":"R1","allee":"A2","etagere":"E1","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Zips spéciaux"},"gdswm31yihair4c":{"id":"gdswm31yihair4c","rack":"R1","allee":"A2","etagere":"E2","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Fermoirs prestige"},"owgzrixa11dpg8s":{"id":"owgzrixa11dpg8s","rack":"R1","allee":"A2","etagere":"E3","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Boutons luxe"},"bi4q2y9v86wzs3t":{"id":"bi4q2y9v86wzs3t","rack":"R1","allee":"A3","etagere":"E1","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Stock exposition"},"60rjiw1swjckjlt":{"id":"60rjiw1swjckjlt","rack":"R1","allee":"A3","etagere":"E2","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Retours"},"eiyzcotohp6vz41":{"id":"eiyzcotohp6vz41","rack":"R1","allee":"A3","etagere":"E3","case":"C1","depotId":"30t9nt3w5uzbikc","desc":"Zone inventaire"},"ohgi1jnyt7rpwh6":{"id":"ohgi1jnyt7rpwh6","rack":"R2","allee":"A1","etagere":"E2","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Zone B – Bandoulières premium"},"nnyfx4m8t1qojah":{"id":"nnyfx4m8t1qojah","rack":"R2","allee":"A2","etagere":"E2","case":"C2","depotId":"xaji0y6dpbhsahx","desc":"Zone B – Boutons spéciaux"},"9tq6v9mh7f2v97x":{"id":"9tq6v9mh7f2v97x","rack":"R2","allee":"A3","etagere":"E2","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Zone B – Zips longs"},"bar3cpdlalsh2bh":{"id":"bar3cpdlalsh2bh","rack":"R2","allee":"A1","etagere":"E2","case":"C2","depotId":"xaji0y6dpbhsahx","desc":"Zone B – Fermoirs complexes"},"jo1mz7e5v0vodfg":{"id":"jo1mz7e5v0vodfg","rack":"R2","allee":"A2","etagere":"E2","case":"C1","depotId":"xaji0y6dpbhsahx","desc":"Zone B – Accessoires divers"},"gfhu124e3gckvbh":{"id":"gfhu124e3gckvbh","rack":"R2","allee":"A3","etagere":"E2","case":"C2","depotId":"xaji0y6dpbhsahx","desc":"Zone B – Stock sécurité"}},"audit":[{"id":"x9dvnu80b6ugvs8","type":"login","action":"Connexion de Administrateur","operator":"Administrateur","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T00:00:00","meta":{"depotName":"Atelier Paris – Maroquinerie","role":"admin"}},{"id":"9l8lpqw2vmcqbnk","type":"admin","action":"Import catalogue : 17 article(s)","operator":"Pierre Blanc","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T03:00:00","meta":{"count":17}},{"id":"fdjgf1c8wquuy5x","type":"transfer","action":"Réception 25 × Bouton métal doré depuis Paris","operator":"Julie Laurent","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T06:00:00","meta":{"ean":"4006381333901","qty":25}},{"id":"poc50h2cwtg1m8x","type":"in","action":"Entrée +50 × Bouton nacre Ø12mm","operator":"Marc Dubois","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T09:00:00","meta":{"ean":"4006381333902","qty":50,"depotId":"30t9nt3w5uzbikc"}},{"id":"clpoxko8g8qynpd","type":"login","action":"Connexion de Pierre Blanc","operator":"Sophie Martin","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T12:00:00","meta":{"depotName":"Atelier Nice – Couture","role":"operator"}},{"id":"1kerpetiuymo0pq","type":"out","action":"Sortie −8 × Fermoir tournette argent 18mm","operator":"Administrateur","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T15:00:00","meta":{"ean":"8712100450002","qty":8,"depotId":"xaji0y6dpbhsahx"}},{"id":"ohsmdyvslh9bh81","type":"login","action":"Connexion de Julie Laurent","operator":"Pierre Blanc","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T18:00:00","meta":{"depotName":"Atelier Paris – Maroquinerie","role":"operator"}},{"id":"nqfll7v5f1bcppv","type":"admin","action":"Article créé : Boucle réglable laiton 35mm","operator":"Julie Laurent","depotId":"xaji0y6dpbhsahx","date":"2026-05-08T21:00:00","meta":{"ean":"8712100450004"}},{"id":"xybj17mgfxc08dt","type":"inv","action":"Inventaire guidé validé — 3 correction(s)","operator":"Marc Dubois","depotId":"xaji0y6dpbhsahx","date":"2026-05-09T00:00:00","meta":{"depotId":"xaji0y6dpbhsahx","corrections":3}},{"id":"fr4muekipu1wyuv","type":"in","action":"Entrée +20 × Fermoir clip laiton 25mm","operator":"Sophie Martin","depotId":"xaji0y6dpbhsahx","date":"2026-05-09T03:00:00","meta":{"ean":"8712100450001","qty":20,"depotId":"thv3a3zmf8mdd4v"}},{"id":"ec8uyo57p6bklds","type":"login","action":"Connexion de Marc Dubois","operator":"Administrateur","depotId":"xaji0y6dpbhsahx","date":"2026-05-09T06:00:00","meta":{"depotName":"Atelier Lyon – Sellerie","role":"manager"}},{"id":"o3o0llj8yrddp0n","type":"transfer","action":"Transfert 8 × Bandoulière cuir naturel 120cm → Lyon","operator":"Pierre Blanc","depotId":"xaji0y6dpbhsahx","date":"2026-05-09T09:00:00","meta":{"ean":"3700089690011","qty":8,"fromDepot":"Paris","toDepot":"Lyon"}},{"id":"vznvksp2ex5t5p5","type":"out","action":"Sortie −12 × Zip YKK 20cm – Noir","operator":"Julie Laurent","depotId":"xaji0y6dpbhsahx","date":"2026-05-09T12:00:00","meta":{"ean":"5706998051001","qty":12,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie"}},{"id":"xkxb94pdzp6lfew","type":"in","action":"Entrée +30 × Bouton métal doré Ø18mm","operator":"Marc Dubois","depotId":"xaji0y6dpbhsahx","date":"2026-05-09T15:00:00","meta":{"ean":"4006381333901","qty":30,"depotId":"xaji0y6dpbhsahx","depotName":"Atelier Paris – Maroquinerie"}},{"id":"vajepecqnvqhw06","type":"login","action":"Connexion de Sophie Martin","operator":"Sophie Martin","depotId":"xaji0y6dpbhsahx","date":"2026-05-09T18:00:00","meta":{"depotName":"Atelier Paris – Maroquinerie","role":"manager"}}]}');
@@ -1222,7 +1235,7 @@ let db=loadDB();
 let S=null,curEAN=null,curOp='in',curArtEAN=null,curStkEAN=null;
 let curUserId=null,curDepotId=null,curLocId=null,curLocDetId=null;
 let catFam='all',sfFilter='all',ttab='pending',htab='all',afFilter='all';
-let invLocal={},guidedInv=[],guidedIdx=0,guidedDepot=null;
+let invLocal={},guidedInv=[],guidedIdx=0,guidedDepot=null,invValidated=false;
 let sigDrawing=false,sigHasData=false,sigCtx,sigLastX,sigLastY;
 const AUDIT_ICONS={in:'📥',out:'📤',inv:'📋',transfer:'↔️',login:'🔐',admin:'⚙️'};
 const SHEET_MAP={art:'art-sheet-bg',stk:'stk-sheet-bg',usr:'usr-sheet-bg',dep:'dep-sheet-bg',loc:'loc-sheet-bg','art-hist':'art-hist-bg',locdet:'locdet-sheet-bg'};
@@ -1253,7 +1266,8 @@ function doLogin(){
     document.getElementById('app-header').style.display='block';
     document.getElementById('app-main').style.display='block';
     document.getElementById('app-nav').style.display='flex';
-    document.getElementById('hdr-depot').textContent=dep.code||dep.name;
+    const hd=document.getElementById('hdr-depot');
+    hd.textContent=dep.code||dep.name;hd.className='hdr-depot';hd.style.display='block';
     document.getElementById('hdr-sync').classList.add('live');
     if(user.role!=='operator'){
       document.getElementById('menu-advanced-section').style.display='block';
@@ -1261,7 +1275,7 @@ function doLogin(){
     document.getElementById('menu-user-name').textContent=user.name;
     const roles={admin:'Administrateur',manager:'Responsable dépôt',operator:'Opérateur'};
     document.getElementById('menu-user-role').textContent=(roles[user.role]||user.role)+' · '+dep.name;
-    buildTrTargets();renderHome();updateMenuBadge();
+    buildTrTargets();showView('home');updateMenuBadge();
   }catch(e){console.error('doLogin:',e);setErr('Erreur : '+e.message);}
 }
 function setErr(m){const el=document.getElementById('li-err');if(el)el.textContent=m;}
@@ -1270,7 +1284,7 @@ document.getElementById('li-name').addEventListener('keydown',e=>{if(e.key==='En
 
 function confirmLogout(){if(confirm('Se déconnecter ?'))doLogout();}
 function doLogout(){
-  if(S)addAudit('login','Déconnexion de '+S.name,{});
+  if(S){addAudit('login','Déconnexion de '+S.name,{});saveDB();}
   S=null;closeMenu();
   ['app-header','app-main','app-nav'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('login-screen').style.display='flex';
@@ -1455,6 +1469,11 @@ async function startHtml5Scanner() {
   const idle = document.getElementById('sc-idle');
   const ui = document.getElementById('sc-ui');
   const dceContainer = document.getElementById('dce-view-container');
+
+  if (typeof Html5Qrcode === 'undefined') {
+    showCameraError('Scanner indisponible', 'La bibliothèque de scan n\'a pas pu être chargée. Vérifiez votre connexion puis rechargez la page, ou saisissez le code manuellement.');
+    return;
+  }
 
   idle.style.display = 'none';
   ui.style.display = 'flex';
@@ -1700,22 +1719,6 @@ function resetScanIdle() {
 }
 
 
-function stopScanner(){
-  if(scanInterval==='purejs'){
-    BarcodeScanner.stop(); // arrêter le moteur JS
-    scanInterval=null;
-  } else if(scanInterval){
-    clearInterval(scanInterval);scanInterval=null;
-  }
-  if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null;}
-  const vp=document.getElementById('scanner-vp');
-  const vid=vp.querySelector('video');if(vid)vid.remove();
-  scannerOn=false;
-  document.getElementById('sc-idle').style.display='flex';
-  document.getElementById('sc-ui').style.display='none';
-  document.getElementById('sc-toggle').innerHTML='<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="1"/></svg> Démarrer';
-}
-
 // ── Scanner QR d'emplacement ──
 let scanLocMode = null; // 'default' | 'alt' | null
 function scanLocQR(mode){
@@ -1728,7 +1731,7 @@ function scanLocQR(mode){
     const inp = document.getElementById('sc-photo-input');
     if(inp){ inp.value=''; inp.click(); }
   } else {
-    startScanner();
+    startScanAdaptive();
   }
 }
 function handleLocationQR(code){
@@ -1757,7 +1760,7 @@ function toggleManual(){
 }
 function submitManual(){
   const v=document.getElementById('m-ean').value.trim();
-  if(v.length<8){toast('Code trop court');return;}
+  if(!isValidEAN(v)){toast('Code invalide — 8 à 14 chiffres attendus');return;}
   handleEAN(v);
   document.getElementById('manual-zone').style.display='none';
   document.getElementById('m-ean').value='';
@@ -1787,6 +1790,8 @@ function updateLocPreviewLive(){
 
 // ══════════════════════════════════════ EAN HANDLING
 function handleEAN(ean){
+  ean=String(ean||'').trim();
+  if(!isValidEAN(ean)){toast('Code non reconnu : '+ean.substring(0,24));return;}
   curEAN=ean;
   const a=db.articles[ean];
   const qty=getStk(S.depotId,ean);
@@ -1824,6 +1829,12 @@ function toggleAdvFields(){
   const t=document.getElementById('adv-toggle');
   if(af.style.display==='none'){af.style.display='block';t.textContent='▴ Masquer les détails';}
   else{af.style.display='none';t.textContent='▾ Modifier les détails';}
+}
+function artHasLoc(a,depotId,locId){
+  // Un article occupe-t-il cet emplacement ? (gère ancien format string et nouveau format array)
+  const locs=a.locations&&a.locations[depotId];
+  if(!locs)return false;
+  return Array.isArray(locs)?locs.includes(locId):locs===locId;
 }
 function getArtLoc(ean,depotId){
   // Retourne l'emplacement par défaut (premier de la liste)
@@ -1905,8 +1916,8 @@ function confirmOp(){
   const family=document.getElementById('f-family').value.trim();
   const ref=document.getElementById('f-ref').value.trim();
   const price=parseFloat(document.getElementById('f-price').value)||0;
-  const threshold=parseInt(document.getElementById('f-threshold').value)||0;
-  const qty=parseInt(document.getElementById('op-qty').value)||1;
+  const threshold=Math.max(0,parseInt(document.getElementById('f-threshold').value)||0);
+  const qty=Math.max(1,parseInt(document.getElementById('op-qty').value)||1);
   const locCode=getLocCodeFromFields();
 
   if(!db.articles[curEAN])db.articles[curEAN]={ean:curEAN,name,family,ref,price,threshold,photo:'',locations:{}};
@@ -1943,7 +1954,7 @@ function confirmOp(){
   } else {
     if(cur<qty){toast('Stock insuffisant pour le transfert');return;}
     const tid=document.getElementById('tr-target').value;
-    if(!tid){toast('Choisissez un dépôt destinataire');return;}
+    if(!tid||!db.depots[tid]){toast('Choisissez un dépôt destinataire');return;}
     db.stocks[S.depotId][curEAN]=cur-qty;
     const tr={id:uid(),ean:curEAN,name,family,ref,qty,
       fromDepotId:S.depotId,fromDepotName:S.depotName,
@@ -2209,11 +2220,7 @@ function renderCartography(){
   // Stats
   const totalLocs=locs.length;
   const occupied=locs.filter(l=>{
-    return Object.values(db.articles).some(a=>{
-      if(a.locations&&a.locations[depId]===l.id){
-        const q=getStk(depId,a.ean);return q>0;
-      }return false;
-    });
+    return Object.values(db.articles).some(a=>artHasLoc(a,depId,l.id)&&getStk(depId,a.ean)>0);
   }).length;
   const empty=totalLocs-occupied;
   const occRate=totalLocs>0?Math.round(occupied/totalLocs*100):0;
@@ -2240,7 +2247,7 @@ function renderCartography(){
     let rackTotal=0,rackOccupied=0;
     Object.values(allees).forEach(arr=>arr.forEach(l=>{
       rackTotal++;
-      const occ=Object.values(db.articles).some(a=>a.locations&&a.locations[depId]===l.id&&getStk(depId,a.ean)>0);
+      const occ=Object.values(db.articles).some(a=>artHasLoc(a,depId,l.id)&&getStk(depId,a.ean)>0);
       if(occ)rackOccupied++;
     }));
 
@@ -2349,7 +2356,7 @@ function renderCat(){
   const fams=[...new Set(Object.values(db.articles).map(a=>a.family||'').filter(Boolean))];
   document.getElementById('fam-filters').innerHTML=
     `<button class="fchip ${catFam==='all'?'active':''}" onclick="setCatFam('all',this)">Tout</button>`+
-    fams.map(f=>`<button class="fchip ${catFam===f?'active':''}" onclick="setCatFam('${esc(f)}',this)">${esc(f)}</button>`).join('');
+    fams.map(f=>`<button class="fchip ${catFam===f?'active':''}" data-fam="${esc(f)}" onclick="setCatFam(this.dataset.fam,this)">${esc(f)}</button>`).join('');
   if(!arts.length){document.getElementById('cat-list').innerHTML=`<div class="empty"><div class="empty-icon">📦</div><div class="empty-txt">Aucun article</div></div>`;return;}
   document.getElementById('cat-list').innerHTML=arts.map(a=>{
     const q=getStk(S.depotId,a.ean);
@@ -2401,6 +2408,7 @@ function saveArt(){
   const prev=document.getElementById('ph-prev');
   const photo=prev.style.display!=='none'?prev.src:'';
   if(!ean||!name){toast('EAN et désignation requis');return;}
+  if(!isValidEAN(ean)){toast('EAN invalide — 8 à 14 chiffres attendus');return;}
   const isNew=!db.articles[ean];
   if(isNew)db.articles[ean]={ean,name,family,ref,price,threshold,photo,locations:{}};
   else Object.assign(db.articles[ean],{name,family,ref,price,threshold,photo});
@@ -2480,7 +2488,7 @@ function openStkSheet(ean){
 }
 function ssChg(d){const i=document.getElementById('ss-qty');i.value=Math.max(0,(parseInt(i.value)||0)+d);}
 function ssInvSave(){
-  const nq=parseInt(document.getElementById('ss-qty').value)||0;
+  const nq=Math.max(0,parseInt(document.getElementById('ss-qty').value)||0);
   const cur=getStk(S.depotId,curStkEAN);
   if(nq===cur){toast('Aucune modification');closeSheet('stk');return;}
   invLocal[curStkEAN]=nq;
@@ -2518,6 +2526,7 @@ function renderInvMode(){
   document.getElementById('inv-guided-zone').style.display='none';
   document.getElementById('inv-summary-zone').style.display='none';
   document.getElementById('sig-validated-msg').style.display='none';
+  invValidated=false;
 }
 function startGuidedInventory(){
   guidedDepot=document.getElementById('inv-depot-sel').value;
@@ -2532,7 +2541,7 @@ function startGuidedInventory(){
   });
   if(!arts.length){toast('Aucun article à inventorier');return;}
   guidedInv=arts.map(a=>({ean:a.ean,name:a.name,sysQty:getStk(guidedDepot,a.ean),realQty:null}));
-  guidedIdx=0;
+  guidedIdx=0;invValidated=false;
   document.getElementById('inv-mode-select').style.display='none';
   document.getElementById('inv-guided-zone').style.display='block';
   renderGuidedCard();
@@ -2615,6 +2624,7 @@ function sigMove(e){if(!sigDrawing)return;e.preventDefault();const r=e.target.ge
 function sigEnd(){sigDrawing=false;}
 function clearSig(){const canvas=document.getElementById('sig-canvas');sigCtx.clearRect(0,0,canvas.width,canvas.height);sigHasData=false;document.getElementById('sig-hint').style.opacity='1';}
 function validateInventoryWithSig(){
+  if(invValidated){toast('Inventaire déjà validé');return;}
   if(!sigHasData){toast('Veuillez signer avant de valider');return;}
   const pin=document.getElementById('inv-val-pin').value;
   const user=Object.values(db.users).find(u=>(u.role==='manager'||u.role==='admin')&&u.pin===pin);
@@ -2629,6 +2639,8 @@ function validateInventoryWithSig(){
   });
   addAudit('inv','Inventaire validé et signé par '+user.name+' — '+changed.length+' correction(s)',{depotId:guidedDepot,corrections:changed.length,total:guidedInv.length,validator:user.name});
   saveDB();
+  invValidated=true;
+  document.getElementById('inv-val-pin').value='';
   document.getElementById('sig-validated-msg').style.display='block';
   document.getElementById('sig-validated-msg').textContent='✓ Inventaire validé par '+user.name+' — '+changed.length+' correction(s) enregistrée(s)';
   toast('Inventaire validé');
@@ -2665,8 +2677,9 @@ function receiveTransfer(id){
   if(!db.stocks[tr.toDepotId])db.stocks[tr.toDepotId]={};
   db.stocks[tr.toDepotId][tr.ean]=(db.stocks[tr.toDepotId][tr.ean]||0)+tr.qty;
   tr.status='done';tr.receivedBy=S.name;tr.receivedDate=new Date().toISOString();
-  addHist({type:'transfer_in',ean:tr.ean,name:tr.name,qty:tr.qty,depotId:tr.toDepotId,depotName:db.depots[tr.toDepotId].name,note:'← '+tr.fromDepotName});
-  addAudit('transfer','Réception '+tr.qty+' × '+tr.name+' depuis '+tr.fromDepotName,{ean:tr.ean,qty:tr.qty,fromDepot:tr.fromDepotName,toDepot:db.depots[tr.toDepotId]&&db.depots[tr.toDepotId].name});
+  const toDepName=(db.depots[tr.toDepotId]||{}).name||tr.toDepotName||'';
+  addHist({type:'transfer_in',ean:tr.ean,name:tr.name,qty:tr.qty,depotId:tr.toDepotId,depotName:toDepName,note:'← '+tr.fromDepotName});
+  addAudit('transfer','Réception '+tr.qty+' × '+tr.name+' depuis '+tr.fromDepotName,{ean:tr.ean,qty:tr.qty,fromDepot:tr.fromDepotName,toDepot:toDepName});
   saveDB();updateMenuBadge();renderTransfers();toast('+'+tr.qty+' réceptionné');
 }
 function renderTransferReport(){
@@ -2761,7 +2774,7 @@ function addAudit(type,action,meta){
 function setAF(f,el){afFilter=f;document.querySelectorAll('[data-af]').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderAudit();}
 function renderAudit(){
   const q=document.getElementById('audit-q').value.toLowerCase();
-  let entries=db.audit||[];
+  let entries=[...(db.audit||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   if(S.role!=='admin')entries=entries.filter(e=>e.depotId===S.depotId||e.type==='login');
   if(afFilter!=='all')entries=entries.filter(e=>e.type===afFilter);
   if(q)entries=entries.filter(e=>e.action.toLowerCase().includes(q)||e.operator.toLowerCase().includes(q)||(e.meta&&e.meta.ean||'').includes(q));
@@ -2809,7 +2822,7 @@ function renderLocations(){
   locs.sort((a,b)=>buildLocCode(a.rack,a.allee,a.etagere,a.case).localeCompare(buildLocCode(b.rack,b.allee,b.etagere,b.case)));
   document.getElementById('loc-list').innerHTML=locs.length?locs.map(l=>{
     const code=buildLocCode(l.rack,l.allee,l.etagere,l.case);
-    const artCount=Object.values(db.articles).filter(a=>a.locations&&a.locations[depId]===l.id).length;
+    const artCount=Object.values(db.articles).filter(a=>artHasLoc(a,depId,l.id)).length;
     return `<div class="u-row" style="cursor:pointer" onclick="openLocSheet('${l.id}')">
       <div class="u-av" style="font-size:10px;letter-spacing:.06em">${esc((code.split('-')[0]||'?'))}</div>
       <div class="u-info"><div class="u-name">${esc(code)}</div><div class="u-role">${esc(l.desc||'—')} · ${artCount} réf.</div></div>
@@ -2835,6 +2848,7 @@ function saveUser(){
   const depotId=document.getElementById('us-dep').value;
   const pin=document.getElementById('us-pin').value;
   if(!name||!pin){toast('Nom et PIN requis');return;}
+  if(!/^\d{4,8}$/.test(pin)){toast('PIN invalide — 4 à 8 chiffres attendus');return;}
   const id=curUsrId||uid();
   db.users[id]={id,name,role,pin,depotId};
   addAudit('admin','Utilisateur '+(curUsrId?'modifié':'créé')+' : '+name+' ('+role+')',{userId:id});
@@ -2866,10 +2880,17 @@ function saveDepot(){
   saveDB();closeSheet('dep');renderAdminDepots();buildLoginDepots();buildTrTargets();toast('Enregistré');
 }
 function delDepot(){
-  if(!curDepotId||!confirm('Supprimer ?'))return;
+  if(!curDepotId)return;
+  if(Object.keys(db.depots).length<=1){toast('Impossible de supprimer le dernier dépôt');return;}
+  if(S&&S.depotId===curDepotId){toast('Impossible de supprimer votre dépôt actif');return;}
+  const usersHere=Object.values(db.users).filter(u=>u.depotId===curDepotId);
+  if(usersHere.length){toast(usersHere.length+' utilisateur(s) assigné(s) à ce dépôt — réassignez-les d\'abord');return;}
+  if(!confirm('Supprimer ce dépôt ? Ses emplacements et son stock seront perdus.'))return;
   addAudit('admin','Dépôt supprimé : '+(db.depots[curDepotId]&&db.depots[curDepotId].name),{});
   delete db.depots[curDepotId];delete db.stocks[curDepotId];
-  saveDB();closeSheet('dep');renderAdminDepots();toast('Supprimé');
+  Object.keys(db.locations).forEach(id=>{if(db.locations[id].depotId===curDepotId)delete db.locations[id];});
+  Object.values(db.articles).forEach(a=>{if(a.locations)delete a.locations[curDepotId];});
+  saveDB();closeSheet('dep');renderAdminDepots();buildLoginDepots();buildTrTargets();toast('Supprimé');
 }
 function openLocSheet(id){
   curLocId=id;const l=id?db.locations[id]:null;
@@ -2909,7 +2930,11 @@ function saveLoc(){
 function delLoc(){
   if(!curLocId||!confirm('Supprimer ?'))return;
   delete db.locations[curLocId];
-  Object.values(db.articles).forEach(a=>{if(a.locations)Object.keys(a.locations).forEach(dep=>{if(a.locations[dep]===curLocId)delete a.locations[dep];});});
+  Object.values(db.articles).forEach(a=>{if(a.locations)Object.keys(a.locations).forEach(dep=>{
+    const v=a.locations[dep];
+    if(Array.isArray(v)){const arr=v.filter(id=>id!==curLocId);if(arr.length)a.locations[dep]=arr;else delete a.locations[dep];}
+    else if(v===curLocId)delete a.locations[dep];
+  });});
   addAudit('admin','Emplacement supprimé',{locId:curLocId});
   saveDB();closeSheet('loc');renderLocations();toast('Supprimé');
 }
@@ -2949,34 +2974,33 @@ function showQRByLoc(locId){
   document.getElementById('qr-modal').classList.add('on');
 }
 
-// QR code visual (canvas-based)
+// QR code réel et scannable (bibliothèque qrcode-generator, MIT)
 function showQRCode(el,text){
-  el.innerHTML='';const size=200;
-  const canvas=document.createElement('canvas');canvas.width=size;canvas.height=size;
+  el.innerHTML='';
+  const size=200,band=30;
+  const canvas=document.createElement('canvas');canvas.width=size;canvas.height=size+band;
   const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,size,size);
-  ctx.fillStyle='#000';
-  function finder(x,y){ctx.fillRect(x,y,49,49);ctx.fillStyle='#fff';ctx.fillRect(x+7,y+7,35,35);ctx.fillStyle='#000';ctx.fillRect(x+14,y+14,21,21);}
-  finder(0,0);finder(size-49,0);finder(0,size-49);
-  for(let i=56;i<size-56;i+=14){ctx.fillRect(i,48,7,7);ctx.fillRect(48,i,7,7);}
-  ctx.fillStyle='#fff';ctx.fillRect(56,56,size-112,size-112);
-  ctx.fillStyle='#333';
-  for(let i=0;i<text.length;i++){
-    const b=text.charCodeAt(i);
-    for(let bit=0;bit<8;bit++){
-      if(b&(1<<bit)){
-        const x=56+((i*8+bit)%((size-112)/7))*7;
-        const y=56+Math.floor((i*8+bit)/((size-112)/7))*7;
-        if(x<size-60&&y<size-60)ctx.fillRect(x,y,6,6);
-      }
-    }
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,size,size+band);
+  const parts=String(text).split(':');
+  if(typeof qrcode==='function'){
+    const qr=qrcode(0,'M'); // version auto, correction M
+    qr.addData(String(text));
+    qr.make();
+    const n=qr.getModuleCount();
+    const quiet=4; // zone de silence obligatoire (4 modules)
+    const mod=Math.floor(size/(n+quiet*2));
+    const off=Math.floor((size-mod*n)/2);
+    ctx.fillStyle='#000';
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(qr.isDark(r,c))ctx.fillRect(off+c*mod,off+r*mod,mod,mod);
+  }else{
+    ctx.fillStyle='#c00';ctx.font='11px sans-serif';ctx.textAlign='center';
+    ctx.fillText('QR indisponible hors ligne',size/2,size/2-8);
+    ctx.fillText('(bibliothèque non chargée)',size/2,size/2+8);
   }
-  ctx.fillStyle='#fff';ctx.fillRect(60,size-50,size-120,40);
   ctx.fillStyle='#000';ctx.font='bold 11px monospace';ctx.textAlign='center';
-  const parts=text.split(':');
-  ctx.fillText((parts[1]||text).substring(0,20),size/2,size-30);
+  ctx.fillText((parts[1]||String(text)).substring(0,24),size/2,size+12);
   ctx.font='8px sans-serif';ctx.fillStyle='#666';
-  ctx.fillText('Emplacement stock',size/2,size-15);
+  ctx.fillText('Emplacement stock',size/2,size+24);
   el.appendChild(canvas);
 }
 
@@ -2987,29 +3011,56 @@ function handleImport(inp){
   if(ext==='csv'){const r=new FileReader();r.onload=e=>parseCSV(e.target.result);r.readAsText(f,'UTF-8');}
   else{document.getElementById('imp-result').innerHTML='<div style="padding:12px;background:var(--amberbg);border:1px solid var(--amber);font-size:10px;color:var(--amber)">⚠ Convertissez en CSV UTF-8 et réimportez.</div>';}
 }
-function parseCSV(txt){
-  const lines=txt.trim().split('\n');
-  const hdrs=lines[0].split(/[;,]/).map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
-  importRows(lines.slice(1).map(l=>{const vals=l.split(/[;,]/);const o={};hdrs.forEach((h,i)=>o[h]=(vals[i]||'').trim().replace(/^"|"$/g,''));return o;}));
+// Découpe une ligne CSV en respectant les champs entre guillemets ("" = guillemet échappé)
+function splitCSVLine(line,sep){
+  const out=[];let cur='',inQ=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(inQ){
+      if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else inQ=false;}
+      else cur+=ch;
+    }else{
+      if(ch==='"')inQ=true;
+      else if(ch===sep){out.push(cur);cur='';}
+      else cur+=ch;
+    }
+  }
+  out.push(cur);
+  return out.map(v=>v.trim());
 }
+// Parse pur (testable) : texte CSV → tableau d'objets {colonne:valeur}
+function parseCSVText(txt){
+  const lines=String(txt||'').replace(/\r\n?/g,'\n').trim().split('\n').filter(l=>l.trim()!=='');
+  if(!lines.length)return[];
+  // Détection du séparateur sur l'en-tête : ';' prioritaire (format FR), sinon ','
+  const sep=(lines[0].match(/;/g)||[]).length>=(lines[0].match(/,/g)||[]).length&&lines[0].includes(';')?';':',';
+  const hdrs=splitCSVLine(lines[0],sep).map(h=>h.toLowerCase().replace(/[^a-z0-9]/g,''));
+  return lines.slice(1).map(l=>{
+    const vals=splitCSVLine(l,sep);
+    const o={};hdrs.forEach((h,i)=>{if(h)o[h]=vals[i]!==undefined?vals[i]:'';});
+    return o;
+  });
+}
+function parseCSV(txt){importRows(parseCSVText(txt));}
 function importRows(rows){
-  let n=0;
+  let n=0,skipped=0;
   rows.forEach(r=>{
     const ean=(r.ean13||r.ean||r.code||'').toString().trim();
     const name=(r.name||r.nom||r.designation||'').toString().trim();
-    if(!ean||!name)return;
+    if(!ean||!name){skipped++;return;}
+    if(!isValidEAN(ean)){skipped++;return;}
     const family=(r.family||r.famille||'').toString().trim();
     const ref=(r.ref||r.reference||'').toString().trim();
-    const price=parseFloat(r.price||r.prix||0)||0;
-    const threshold=parseInt(r.threshold||r.seuil||0)||0;
+    const price=parseFloat(String(r.price||r.prix||0).replace(',','.'))||0;
+    const threshold=Math.max(0,parseInt(r.threshold||r.seuil||0)||0);
     db.articles[ean]={ean,name,family,ref,price,threshold,photo:db.articles[ean]&&db.articles[ean].photo||'',locations:db.articles[ean]&&db.articles[ean].locations||{}};
     if(!db.stocks[S.depotId])db.stocks[S.depotId]={};
     if(db.stocks[S.depotId][ean]===undefined)db.stocks[S.depotId][ean]=0;
     n++;
   });
-  addAudit('admin','Import catalogue : '+n+' article(s)',{count:n});
+  addAudit('admin','Import catalogue : '+n+' article(s)',{count:n,skipped});
   saveDB();
-  document.getElementById('imp-result').innerHTML='<div style="padding:12px;background:var(--greenbg);border:1px solid var(--green);font-size:10px;color:var(--green)">✓ '+n+' article(s) importé(s)</div>';
+  document.getElementById('imp-result').innerHTML='<div style="padding:12px;background:var(--greenbg);border:1px solid var(--green);font-size:10px;color:var(--green)">✓ '+n+' article(s) importé(s)'+(skipped?' · <span style="color:var(--amber)">'+skipped+' ligne(s) ignorée(s) (EAN ou nom manquant/invalide)</span>':'')+'</div>';
   toast(n+' articles importés');
 }
 function exportPDF(){
@@ -3045,7 +3096,8 @@ function closeSheet(name){const el=document.getElementById(SHEET_MAP[name]||name
 function getStk(depotId,ean){return(db.stocks[depotId]||{})[ean]||0;}
 function addHist(entry){db.history.unshift(Object.assign({operator:S.name,date:new Date().toISOString()},entry));if(db.history.length>500)db.history.length=500;}
 function uid(){return Math.random().toString(36).slice(2,9)+Date.now().toString(36);}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function isValidEAN(s){return /^\d{8,14}$/.test(String(s||''));}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2800);}
 function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
 function fmtRelativeDate(iso){
@@ -3063,8 +3115,22 @@ function fmtRelativeDate(iso){
 //  PHOTO ANALYSIS MODULE
 // ══════════════════════════════════════
 let currentPhotoBase64 = null;
+let currentPhotoMime = 'image/jpeg';
 let suggestedParts = [];
 let selectedPartIds = new Set();
+
+// Clé API Anthropic — stockée localement sur l'appareil, jamais dans le code.
+const API_KEY_STORAGE = 'mode_anthropic_key';
+function getApiKey(){ try{ return localStorage.getItem(API_KEY_STORAGE)||''; }catch(e){ return ''; } }
+function configureApiKey(){
+  const cur = getApiKey();
+  const k = prompt('Clé API Anthropic (sk-ant-…)\n\nElle sera stockée uniquement sur cet appareil.\nLaisser vide pour la supprimer.', cur||'');
+  if(k===null) return; // annulé
+  try{
+    if(k.trim()){ localStorage.setItem(API_KEY_STORAGE, k.trim()); toast('Clé API enregistrée'); }
+    else { localStorage.removeItem(API_KEY_STORAGE); toast('Clé API supprimée'); }
+  }catch(e){ toast('Impossible de stocker la clé'); }
+}
 
 function triggerPhotoCapture(){
   document.getElementById('photo-capture-input').click();
@@ -3075,6 +3141,7 @@ function handleProductPhoto(inp){
   const reader = new FileReader();
   reader.onload = e => {
     currentPhotoBase64 = e.target.result.split(',')[1]; // base64 only
+    currentPhotoMime = (f.type && f.type.startsWith('image/')) ? f.type : 'image/jpeg';
     const img = document.getElementById('photo-preview-img');
     img.src = e.target.result;
     img.style.display = 'block';
@@ -3108,6 +3175,12 @@ function resetPhotoAnalysis(){
 
 async function analyzeProductPhoto(){
   if(!currentPhotoBase64){ toast('Prenez une photo d\'abord'); return; }
+  const apiKey = getApiKey();
+  if(!apiKey){
+    document.getElementById('photo-error').style.display = 'block';
+    document.getElementById('photo-error-msg').textContent = 'Aucune clé API configurée. Appuyez sur « Configurer la clé API » ci-dessous pour activer l\'analyse photo.';
+    return;
+  }
 
   // Show loading
   document.getElementById('photo-upload-zone').style.display = 'none';
@@ -3122,6 +3195,8 @@ async function analyzeProductPhoto(){
       headers: {
         'Content-Type': 'application/json',
         'anthropic-version': '2023-06-01',
+        'x-api-key': apiKey,
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-5',
@@ -3131,7 +3206,7 @@ async function analyzeProductPhoto(){
           content: [
             {
               type: 'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: currentPhotoBase64 }
+              source: { type: 'base64', media_type: currentPhotoMime, data: currentPhotoBase64 }
             },
             {
               type: 'text',
@@ -3193,7 +3268,16 @@ Si tu ne peux pas identifier le produit clairement, indique confidence: "low" et
       (result.product_description || '') +
       (result.confidence === 'low' ? ' ⚠ Identification incertaine' : '');
 
-    suggestedParts = result.spare_parts || [];
+    // Assainir la réponse du modèle : ids internes contrôlés, champs typés
+    suggestedParts = (Array.isArray(result.spare_parts) ? result.spare_parts : []).map((p, i) => ({
+      id: 'p' + i,
+      name: String(p.name || 'Pièce ' + (i + 1)),
+      family: String(p.family || ''),
+      description: String(p.description || ''),
+      typical_ean: isValidEAN(p.typical_ean) ? String(p.typical_ean) : '',
+      typical_threshold: Math.max(0, parseInt(p.typical_threshold) || 5),
+      priority: ['high','medium','low'].includes(p.priority) ? p.priority : 'medium'
+    }));
     selectedPartIds = new Set(suggestedParts.filter(p => p.priority === 'high').map(p => p.id));
 
     renderSuggestedParts();
