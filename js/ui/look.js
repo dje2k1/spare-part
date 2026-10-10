@@ -31,10 +31,10 @@ const LOOK = {
 /** Mode du scan → famille (entrée verte, sortie rouge, transfert bleu, consultation indigo). */
 export const SCAN_FAMILY = { in: 'green', out: 'red', transfer: 'blue', find: 'indigo' };
 
-/** Couleur « profonde » de chaque famille : barre d'état du téléphone (meta theme-color). */
+/** Émail de chaque famille (= barre du haut) : barre d'état du téléphone (meta theme-color). Voir css/tokens.css. */
 const TOP = {
-  brand: '#241336', indigo: '#1b1a4a', blue: '#0b2554', teal: '#042f2e', green: '#052e1f',
-  amber: '#3a1d04', red: '#4c0519', violet: '#2e1065', slate: '#0f172a', rose: '#500724',
+  brand: '#1b3d93', indigo: '#1b3d93', blue: '#0b5cad', teal: '#0b6b74', green: '#0d6b4c',
+  amber: '#f3b41b', red: '#c7361f', violet: '#6a2d8f', slate: '#2b3555', rose: '#b52a63',
 };
 
 let currentName = 'home';
@@ -65,4 +65,11 @@ export function hueClass(text) {
   let h = 7;
   for (const ch of String(text ?? '')) h = (h * 31 + ch.codePointAt(0)) >>> 0;
   return `hue-${h % 10}`;
+}
+
+/** Couleur de ligne d'un dépôt : l'entrepôt central porte le bleu émail (hue-0), chaque atelier une autre teinte stable. */
+export function depotHue(d) {
+  if (d?.kind === 'central') return 'hue-0';
+  const h = hueClass(d?.name);
+  return h === 'hue-0' ? 'hue-1' : h;
 }

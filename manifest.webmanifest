@@ -8,8 +8,8 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#241336",
-  "theme_color": "#241336",
+  "background_color": "#1b3d93",
+  "theme_color": "#1b3d93",
   "categories": [
     "business",
     "productivity"

@@ -18,10 +18,9 @@ const FILES = [
   // [source, destination, licence]
   [nm('html5-qrcode', 'html5-qrcode.min.js'), 'vendor/html5-qrcode.min.js', 'Apache-2.0'],
   [nm('qrcode-generator', 'qrcode.js'), 'vendor/qrcode.js', 'MIT'],
-  [nm('@fontsource', 'playfair-display', 'files', 'playfair-display-latin-400-normal.woff2'), 'fonts/playfair-display-400.woff2', 'OFL-1.1'],
-  [nm('@fontsource', 'playfair-display', 'files', 'playfair-display-latin-500-normal.woff2'), 'fonts/playfair-display-500.woff2', 'OFL-1.1'],
-  [nm('@fontsource', 'playfair-display', 'files', 'playfair-display-latin-400-italic.woff2'), 'fonts/playfair-display-400-italic.woff2', 'OFL-1.1'],
-  [nm('@fontsource-variable', 'jost', 'files', 'jost-latin-wght-normal.woff2'), 'fonts/jost-variable.woff2', 'OFL-1.1'],
+  // Archivo variable : axes graisse (100–900) ET chasse (62–125 %) — étroite pour les plaques et les chiffres,
+  // normale pour le texte. Une seule famille, un seul fichier.
+  [nm('@fontsource-variable', 'archivo', 'files', 'archivo-latin-wdth-normal.woff2'), 'fonts/archivo-variable.woff2', 'OFL-1.1'],
 ];
 
 const sums = {};

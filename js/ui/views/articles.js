@@ -66,8 +66,8 @@ function renderReorder() {
       ${rows.length ? html`<p class="pad muted">Quantité suggérée : jusqu'au stock maximum du dépôt (seuils du dépôt, sinon 2 × le seuil de la fiche), déduction faite de ce qui est déjà en route. Touchez une ligne pour ouvrir la fiche.</p><div class="list">${rows.map((r) => html`
         <button type="button" class="row" data-action="article.open" data-ean="${r.article.ean}">
           <span class="row__lead">${thumb(r.article)}</span>
-          <span class="row__body"><span class="row__eyebrow">${r.article.family || '—'}</span><span class="row__title">${r.article.name}</span>
-            <span class="row__meta">En stock ${fmtInt(r.qty)} / seuil ${fmtInt(r.threshold)}${r.incoming ? ` · ${fmtInt(r.incoming)} en route` : ''}${r.locs[0] ? html` · ${locBadge(locCode(r.locs[0]))}` : ''}</span></span>
+          <span class="row__body"><span class="row__title">${r.article.name}</span>
+            <span class="row__meta">${r.locs[0] ? locBadge(locCode(r.locs[0])) : ''}<span>En stock ${fmtInt(r.qty)} / seuil ${fmtInt(r.threshold)}${r.incoming ? ` · ${fmtInt(r.incoming)} en route` : ''}${r.article.family ? ` · ${r.article.family}` : ''}</span></span></span>
           <span class="row__trail"><span class="row__qty">+${fmtInt(r.suggested)}</span><span class="row__sub">${r.cost ? fmtEur(r.cost) : 'à commander'}</span></span>
         </button>`)}</div>`
         : emptyState({ icon: 'check', title: 'Aucune alerte', text: 'Aucune pièce n\'est sous son seuil dans ce dépôt.' })}

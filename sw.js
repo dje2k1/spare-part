@@ -4,7 +4,7 @@
 // l'utilisateur (bandeau « Mettre à jour ») au lieu d'être imposée en pleine saisie.
 //
 // ⚠ La liste PRECACHE est générée : `npm run sw` (vérifiée par tests/unit/pwa.test.js).
-const VERSION = '3.1.0-953228e9';
+const VERSION = '3.2.0-a4b13221';
 const CACHE = `mode-stock-${VERSION}`;
 
 // <PRECACHE>
@@ -18,10 +18,7 @@ const PRECACHE = [
   'css/tokens.css',
   'css/views.css',
   'css/work.css',
-  'fonts/jost-variable.woff2',
-  'fonts/playfair-display-400-italic.woff2',
-  'fonts/playfair-display-400.woff2',
-  'fonts/playfair-display-500.woff2',
+  'fonts/archivo-variable.woff2',
   'icons/apple-touch-icon.png',
   'icons/favicon-32.png',
   'icons/icon-192.png',

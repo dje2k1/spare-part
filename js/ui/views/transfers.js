@@ -20,7 +20,7 @@ function card(t, kind) {
   return html`
     <li class="tr-card">
       <div class="tr-card__top"><strong class="tr-card__name">${t.name}</strong><span class="tr-card__qty num">${fmtInt(t.qty)}</span></div>
-      <p class="tr-card__route">${t.fromDepotName} ${icon('chevron', 'i--sm')} ${t.toDepotName}</p>
+      <p class="tr-card__route"><span class="tr-card__rail" aria-hidden="true"></span><span>${t.fromDepotName}</span><span><span class="sr-only">vers </span>${t.toDepotName}</span></p>
       <p class="muted tr-card__meta">${fmtRelative(t.date)} · ${t.operator}</p>
       ${kind === 'in' && can('transfer.receive') && canAct(t.toDepotId) ? html`<div class="tr-card__actions">
         <button type="button" class="btn btn--primary btn--sm" data-action="tr.receive" data-id="${t.id}">${icon('check', 'i--sm')}Réceptionner</button>
