@@ -7,11 +7,35 @@ import { toast } from './toast.js';
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-/** Injecte du HTML — uniquement un `SafeHtml` (résultat de html``/raw()), jamais une chaîne brute. */
+/**
+ * Injecte du HTML — uniquement un `SafeHtml` (résultat de html``/raw()), jamais une chaîne brute.
+ * Le champ actif est d'abord quitté (blur) : son éventuel « change » part AVANT la suppression du nœud,
+ * jamais pendant (ce qui provoquerait un rendu imbriqué et une erreur DOM).
+ */
 export function setHtml(el, safe) {
   if (!(safe instanceof SafeHtml)) throw new TypeError('setHtml : un SafeHtml est requis (utilisez html``)');
+  const active = document.activeElement;
+  if (active && active !== el && el.contains(active) && typeof active.blur === 'function') active.blur();
   el.innerHTML = safe.value;
   return el;
+}
+
+// ── Jamais de nouveau rendu sous le doigt ──
+// Modifier une quantité puis toucher aussitôt « Valider » : le « change » du champ arrive entre l'appui et
+// le relâchement ; redessiner à ce moment ferait disparaître le bouton visé et perdre le geste.
+let pressed = false;
+const queued = new Set();
+function release() {
+  pressed = false;
+  setTimeout(() => { const fns = [...queued]; queued.clear(); fns.forEach((fn) => fn()); }, 0);
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', () => { pressed = true; }, { capture: true, passive: true });
+  for (const ev of ['pointerup', 'pointercancel']) document.addEventListener(ev, () => { if (pressed) setTimeout(release, 0); }, { capture: true, passive: true });
+}
+/** Exécute `fn` maintenant, ou juste après le geste en cours (une seule fois par fonction). */
+export function whenReleased(fn) {
+  if (pressed) queued.add(fn); else fn();
 }
 
 /** Icône du sprite : icon('scan'), icon('x', 'i--sm'). */
@@ -65,6 +89,14 @@ export function initDelegation(root = document) {
     const el = e.target instanceof Element ? e.target.closest('[data-enter]') : null;
     if (el) { e.preventDefault(); dispatch(el.dataset.enter, el, e); }
   });
+}
+
+/**
+ * Variables CSS pour un attribut style (positions d'étiquettes, barres de graphique). Seules des
+ * variables `--nom` à valeur NUMÉRIQUE sont produites : aucune mise en forme arbitraire en ligne.
+ */
+export function cssVars(vars, unit = '') {
+  return Object.entries(vars).filter(([k, v]) => /^[a-z]{1,12}$/.test(k) && Number.isFinite(v)).map(([k, v]) => `--${k}:${Math.round(v * 1000) / 1000}${unit}`).join(';');
 }
 
 /** Valeur d'un champ du formulaire `root` par son attribut name. */

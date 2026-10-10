@@ -28,7 +28,7 @@ test.describe('inventaire guidé', () => {
 
   test('parcours complet : comptage → écarts → signature → PIN → stocks corrigés et audités', async ({ page }) => {
     await startAlertInventory(page);
-    await expect(page.locator('.inv-progress')).toContainText('1 / 4');
+    await expect(page.locator('.inv-progress')).toContainText(/^1 \/ \d+/);
     const counted = await countAll(page, [500, 0]);
     await expect(page.locator('#inv-body')).toContainText('Écarts constatés');
     const before = await db(page);
@@ -62,9 +62,9 @@ test.describe('inventaire guidé', () => {
     await login(page, SOPHIE); // un rechargement ramène à la connexion : la session n'est jamais conservée
     await go(page, '#/inventory');
     await expect(page.locator('#inv-body')).toContainText('Inventaire en cours');
-    await expect(page.locator('#inv-body')).toContainText('1 / 4 articles comptés');
+    await expect(page.locator('#inv-body')).toContainText(/1 \/ \d+ articles comptés/);
     await page.locator('[data-action="inv.resume"]').click();
-    await expect(page.locator('.inv-progress')).toContainText('2 / 4');
+    await expect(page.locator('.inv-progress')).toContainText(/^2 \/ \d+/);
     await page.locator('[data-action="inv.back"]').count();
     await go(page, '#/home');
     await go(page, '#/inventory');
@@ -78,6 +78,6 @@ test.describe('inventaire guidé', () => {
     await page.locator('[data-action="inv.next"]').click();
     await expect(toastText(page)).toContainText('Saisissez la quantité');
     await page.locator('[data-action="inv.skip"]').click();
-    await expect(page.locator('.inv-progress')).toContainText('2 / 4');
+    await expect(page.locator('.inv-progress')).toContainText(/^2 \/ \d+/);
   });
 });

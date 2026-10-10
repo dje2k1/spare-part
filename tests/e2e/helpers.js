@@ -46,7 +46,7 @@ export async function seedDemo(page, mutate) {
 }
 
 /** Écrans de connexion : dépôt (si plusieurs) → profil → PIN. */
-export async function login(page, { name = 'Administrateur', pin = '1234', depot } = {}) {
+export async function login(page, { name = 'Administrateur', pin = '1234', depot, keepBriefing = false } = {}) {
   await page.goto('./');
   const depotBtn = page.locator('[data-action="login.depot"]');
   if (await depotBtn.count()) await (depot ? depotBtn.filter({ hasText: depot }) : depotBtn.first()).click();
@@ -54,6 +54,13 @@ export async function login(page, { name = 'Administrateur', pin = '1234', depot
   for (const d of pin) await page.locator(`.keypad [data-key="${d}"]`).click();
   await expect(page.locator('#app')).toBeVisible();
   await expect(page.locator('#view')).toBeVisible();
+  if (keepBriefing) return;
+  // « Votre journée » s'ouvre à la première connexion du jour : on la ferme pour la suite du test
+  const sheet = page.locator('#sheet[open]');
+  if (await sheet.count() && /Votre journée/.test(await sheet.locator('.sheet__title').innerText())) {
+    await sheet.getByRole('button', { name: 'C\'est parti' }).click();
+    await expect(page.locator('#sheet[open]')).toHaveCount(0);
+  }
 }
 
 /** Raccourci : base de démo + connexion. */

@@ -2,12 +2,13 @@
 import { html, fmtInt, fmtDateTime, plural } from '../../lib/text.js';
 import { parse as parseCsv, stringify } from '../../lib/csv.js';
 import { icon, actions, $, val, download } from '../dom.js';
-import { db, depot, can, run, store, state, storage } from '../state.js';
-import { saveUser, deleteUser, saveDepot, deleteDepot, saveLocation, deleteLocation, importCatalogue, updateSettings } from '../../core/ops.js';
+import { db, depot, can, run, preview, store, state, storage } from '../state.js';
+import { saveUser, deleteUser, saveDepot, deleteDepot, saveLocation, deleteLocation, updateSettings } from '../../core/ops.js';
+import { importCatalogueOp } from '../../core/registry.js';
 import { hashPin, pinPolicy, upgradeLegacyPins } from '../../core/auth.js';
 import { buildFreshDb } from '../../core/seed.js';
 import { locCode, stockOf, daysSince, searchArticles } from '../../core/queries.js';
-import { KEYS, ROLES } from '../../core/config.js';
+import { KEYS, ROLES, DEPOT_KINDS } from '../../core/config.js';
 import { pageHead, emptyState } from '../components.js';
 import { openSheet, closeSheet, confirmDialog, promptDialog } from '../dialogs.js';
 import { printLabels, printStockReport } from '../print.js';
@@ -82,6 +83,7 @@ function depotSheet(id) {
       <label class="field"><span class="field__label">Nom</span><input class="input" name="name" maxlength="60" value="${d?.name ?? ''}" required></label>
       <label class="field"><span class="field__label">Localisation</span><input class="input" name="location" maxlength="60" value="${d?.location ?? ''}"></label>
       <label class="field"><span class="field__label">Code</span><input class="input" name="code" maxlength="10" value="${d?.code ?? ''}" autocapitalize="characters" placeholder="DEP-01"></label>
+      <label class="field"><span class="field__label">Type</span><select class="select" name="kind">${Object.entries(DEPOT_KINDS).map(([k, v]) => html`<option value="${k}" ${(d?.kind ?? 'atelier') === k ? 'selected' : ''}>${v.label} — ${v.hint}</option>`)}</select></label>
       <p class="field__error" data-err role="alert"></p>
       <button type="submit" class="btn btn--primary btn--block">Enregistrer</button>
       ${d ? html`<button type="button" class="btn btn--danger btn--block" data-action="adm.depot.delete" data-id="${d.id}">${icon('trash')}Supprimer le dépôt</button>` : ''}</form>`,
@@ -163,6 +165,17 @@ function data() {
     <section class="card stack"><h3 class="card__title">${icon('database', 'i--sm')} Stockage</h3><p class="muted" id="storage-info">Calcul en cours…</p></section>
     <section class="card stack"><h3 class="card__title">${icon('lock', 'i--sm')} Verrouillage automatique</h3>
       <label class="field"><span class="field__label">Se verrouiller après inactivité</span><select class="select" data-change="adm.lock">${[[0, 'Jamais'], [5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure']].map(([v, l]) => html`<option value="${v}" ${v === m.settings.sessionMinutes ? 'selected' : ''}>${l}</option>`)}</select></label></section>
+    <form class="card stack" data-submit="adm.planning" novalidate><h3 class="card__title">${icon('sliders', 'i--sm')} Seuils intelligents et briefing</h3>
+      <p class="muted">Paramètres utilisés pour proposer les seuils de chaque dépôt (menu Plus → Seuils intelligents).</p>
+      <div class="grid2">
+        <label class="field"><span class="field__label">Niveau de service (%)</span><input class="input input--mono" name="serviceLevel" type="number" min="50" max="99" value="${m.settings.serviceLevel}"></label>
+        <label class="field"><span class="field__label">Délai entrepôt → atelier (j)</span><input class="input input--mono" name="leadDaysInternal" type="number" min="0" max="60" value="${m.settings.leadDaysInternal}"></label>
+        <label class="field"><span class="field__label">Délai fournisseur par défaut (j)</span><input class="input input--mono" name="leadDaysSupplier" type="number" min="0" max="180" value="${m.settings.leadDaysSupplier}"></label>
+        <label class="field"><span class="field__label">Couverture atelier (j)</span><input class="input input--mono" name="coverDaysAtelier" type="number" min="1" max="120" value="${m.settings.coverDaysAtelier}"></label>
+        <label class="field"><span class="field__label">Couverture entrepôt (j)</span><input class="input input--mono" name="coverDaysCentral" type="number" min="1" max="180" value="${m.settings.coverDaysCentral}"></label></div>
+      <label class="check"><input type="checkbox" name="briefing" ${m.settings.briefing ? 'checked' : ''}><span>Afficher « Votre journée » à la première ouverture du jour</span></label>
+      <p class="field__error" data-err role="alert"></p>
+      <button type="submit" class="btn btn--secondary btn--block">Enregistrer ces réglages</button></form>
     ${m.demo ? html`<section class="card card--gold stack"><h3 class="card__title">${icon('sparkles', 'i--sm')} Mode démonstration</h3>
       <p class="muted">Ces données sont fictives. Passez en production pour partir d'un atelier vide avec votre propre administrateur.</p>
       <button type="button" class="btn btn--primary btn--block" data-action="adm.production">Passer en production…</button></section>` : ''}
@@ -185,7 +198,6 @@ async function paintStorage() {
   el.textContent = text;
 }
 
-const importRows = (rows, opts) => run((d, c) => importCatalogue(d, c, rows, opts));
 const stamp = () => new Date().toISOString().slice(0, 10);
 const formErr = (form, e) => { if (e.isOpError) { form.querySelector('[data-err]').textContent = e.message; return true; } return false; };
 
@@ -205,16 +217,16 @@ export function initAdmin() {
     },
     async 'adm.user.delete'(el) {
       if (!(await confirmDialog({ title: 'Supprimer ce compte ?', message: db().users[el.dataset.id].name, confirmLabel: 'Supprimer', danger: true }))) return;
-      run(deleteUser, el.dataset.id); await closeSheet(); toast('Compte supprimé.'); refresh();
+      run(deleteUser, { id: el.dataset.id }); await closeSheet(); toast('Compte supprimé.'); refresh();
     },
     // Dépôts
     'adm.depot': (el) => depotSheet(el.dataset.id || null),
     async 'adm.depot.save'(form) {
-      try { run(saveDepot, { id: form.dataset.id || undefined, name: val(form, 'name'), location: val(form, 'location'), code: val(form, 'code') }); await closeSheet(); toast('Dépôt enregistré.', { tone: 'ok' }); refresh(); } catch (e) { if (!formErr(form, e)) throw e; }
+      try { run(saveDepot, { id: form.dataset.id || undefined, name: val(form, 'name'), location: val(form, 'location'), code: val(form, 'code'), kind: val(form, 'kind') }); await closeSheet(); toast('Dépôt enregistré.', { tone: 'ok' }); refresh(); } catch (e) { if (!formErr(form, e)) throw e; }
     },
     async 'adm.depot.delete'(el) {
       if (!(await confirmDialog({ title: 'Supprimer ce dépôt ?', message: 'Ses emplacements seront supprimés. L\'opération est refusée s\'il reste du stock.', confirmLabel: 'Supprimer', danger: true }))) return;
-      run(deleteDepot, el.dataset.id); await closeSheet(); toast('Dépôt supprimé.'); refresh();
+      run(deleteDepot, { id: el.dataset.id }); await closeSheet(); toast('Dépôt supprimé.'); refresh();
     },
     // Emplacements
     'adm.loc.depot': (el) => { L.depotId = el.value; refresh(); },
@@ -227,7 +239,7 @@ export function initAdmin() {
     },
     async 'adm.loc.delete'(el) {
       if (!(await confirmDialog({ title: 'Supprimer cet emplacement ?', message: 'Les pièces qui y sont rangées perdent cet emplacement.', confirmLabel: 'Supprimer', danger: true }))) return;
-      run(deleteLocation, el.dataset.id); await closeSheet(); toast('Emplacement supprimé.'); refresh();
+      run(deleteLocation, { id: el.dataset.id }); await closeSheet(); toast('Emplacement supprimé.'); refresh();
     },
     'adm.loc.label': (el) => { const l = db().locations[el.dataset.id]; printLabels([{ kind: 'location', loc: l, depot: db().depots[l.depotId] }]); },
     'adm.loc.labels': (el) => {
@@ -243,12 +255,12 @@ export function initAdmin() {
       input.value = '';
       const { rows } = parseCsv(L.csv.text);
       if (!rows.length) { toast('Aucune ligne de données trouvée dans ce fichier.', { tone: 'error' }); return; }
-      importSheet(importRows(rows, { dryRun: true }), L.csv.name);
+      importSheet(preview(importCatalogueOp, { rows, dryRun: true }), L.csv.name);
     },
     async 'adm.import.apply'() {
       if (!L.csv) return;
       try {
-        const r = importRows(parseCsv(L.csv.text).rows, { applyStock: Boolean($('#imp-stock')?.checked) });
+        const r = run(importCatalogueOp, { rows: parseCsv(L.csv.text).rows, applyStock: Boolean($('#imp-stock')?.checked) });
         L.csv = null;
         await closeSheet();
         toast(`Import terminé : ${r.created} créé(s), ${r.updated} modifié(s)${r.stockSet ? `, ${plural(r.stockSet, 'stock ajusté', 'stocks ajustés')}` : ''}.`, { tone: 'ok', ms: 5000 });
@@ -261,7 +273,7 @@ export function initAdmin() {
       const rows = searchArticles(db(), depot().id, { sort: 'loc' });
       download(`stock-${depot().code || 'depot'}-${stamp()}.csv`, stringify(rows, [
         { label: 'Emplacement', get: (r) => (r.locs[0] ? locCode(r.locs[0]) : '') }, { label: 'EAN', get: (r) => r.article.ean }, { label: 'Désignation', get: (r) => r.article.name },
-        { label: 'Famille', get: (r) => r.article.family }, { label: 'Référence', get: (r) => r.article.ref }, { label: 'Stock', get: (r) => r.qty }, { label: 'Seuil', get: (r) => r.article.threshold },
+        { label: 'Famille', get: (r) => r.article.family }, { label: 'Référence', get: (r) => r.article.ref }, { label: 'Stock', get: (r) => r.qty }, { label: 'Seuil', get: (r) => r.min }, { label: 'Maximum', get: (r) => r.max },
         { label: 'Prix unitaire', get: (r) => String(r.article.price).replace('.', ',') }, { label: 'Valeur', get: (r) => String(Math.round(r.qty * r.article.price * 100) / 100).replace('.', ',') },
       ]), 'text/csv');
     },
@@ -276,7 +288,7 @@ export function initAdmin() {
     'adm.export.print': () => {
       const f = $('#print-filter').value;
       const rows = searchArticles(db(), depot().id, { sort: 'loc', filter: f === 'alert' ? 'alert' : 'all' }).filter((r) => f !== 'nonzero' || r.qty > 0);
-      printStockReport({ title: 'Atelier — État de stock', subtitle: depot().name, rows: rows.map((r) => ({ loc: r.locs[0] ? locCode(r.locs[0]) : '', family: r.article.family, name: r.article.name, ean: r.article.ean, threshold: r.article.threshold, qty: r.qty, alert: r.status !== 'ok' })) });
+      printStockReport({ title: 'Atelier — État de stock', subtitle: depot().name, rows: rows.map((r) => ({ loc: r.locs[0] ? locCode(r.locs[0]) : '', family: r.article.family, name: r.article.name, ean: r.article.ean, threshold: r.min, qty: r.qty, alert: r.status !== 'ok' })) });
     },
     // Données
     'adm.backup': () => {
@@ -295,6 +307,10 @@ export function initAdmin() {
         endSession('Sauvegarde restaurée : reconnectez-vous.', { replaceDb: restored });
       } catch (e) { toast(e.message, { tone: 'error' }); }
       input.value = '';
+    },
+    'adm.planning'(form) {
+      const f = Object.fromEntries(['serviceLevel', 'leadDaysInternal', 'leadDaysSupplier', 'coverDaysAtelier', 'coverDaysCentral'].map((k) => [k, val(form, k)]));
+      try { run(updateSettings, { ...f, briefing: form.elements.briefing.checked }); toast('Réglages enregistrés.', { tone: 'ok' }); } catch (e) { if (!formErr(form, e)) throw e; }
     },
     'adm.lock'(el) { run(updateSettings, { sessionMinutes: el.value }); toast('Réglage enregistré.', { tone: 'ok' }); },
     async 'adm.production'() {

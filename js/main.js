@@ -1,11 +1,12 @@
 // Point d'entrée : démarrage, branchements globaux (stockage multi-onglets, réseau, erreurs, PWA).
-import { applyTheme, store, state, db } from './ui/state.js';
+import { applyTheme, store, state, db, syncEngine } from './ui/state.js';
 import { initDelegation, actions, $ } from './ui/dom.js';
 import { initDialogs } from './ui/dialogs.js';
 import { defineRoutes, back, refresh } from './ui/router.js';
 import { initLogin, showLogin } from './ui/views/login.js';
 import { setLogoutHandler, setBanner, clearBanner, runBanner, updateChrome, endSession } from './ui/session.js';
 import { initMenu, setInstallPrompt } from './ui/menu.js';
+import { initBriefing } from './ui/briefing.js';
 import { routes, initViews } from './ui/routes.js';
 import { upgradeLegacyPins } from './core/auth.js';
 import { KEYS } from './core/config.js';
@@ -82,10 +83,12 @@ async function boot() {
   initDialogs();
   initLogin();
   initMenu();
+  initBriefing();
   initViews();
   actions({
     'nav.back': () => back(),
     'banner.run': (el) => runBanner(el.dataset.id),
+    'sync.status': () => syncEngine()?.openStatus(),
   });
   defineRoutes(routes);
   setLogoutHandler((message) => showLogin(message));

@@ -19,7 +19,7 @@ export const statusPill = (status) => (STATUS[status] ? html`<span class="pill $
 export const locBadge = (code) => (code ? html`<span class="loc">${icon('pin')}${code}</span>` : '');
 
 /** Ligne d'article cliquable (liste des articles, résultats de recherche). */
-export function articleRow({ article, qty, status, locs }, { action = 'article.open', extra = '' } = {}) {
+export function articleRow({ article, qty, status, locs, min = article.threshold }, { action = 'article.open', extra = '' } = {}) {
   const qtyCls = status === 'zero' ? 'row__qty--zero' : status === 'low' ? 'row__qty--low' : '';
   return html`
     <button type="button" class="row" data-action="${action}" data-ean="${article.ean}">
@@ -31,7 +31,7 @@ export function articleRow({ article, qty, status, locs }, { action = 'article.o
       </span>
       <span class="row__trail">
         <span class="row__qty ${qtyCls}">${fmtInt(qty)}</span>
-        ${article.threshold > 0 ? html`<span class="row__sub">min ${fmtInt(article.threshold)}</span>` : ''}
+        ${min > 0 ? html`<span class="row__sub">min ${fmtInt(min)}</span>` : ''}
       </span>
     </button>`;
 }

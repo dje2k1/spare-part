@@ -2,7 +2,7 @@
 import { html, fmtInt, plural } from '../../lib/text.js';
 import { icon, actions, $ } from '../dom.js';
 import { db, depot, can, state } from '../state.js';
-import { planModel, articlesAt, locCode, statusOf } from '../../core/queries.js';
+import { planModel, articlesAt, locCode, levelOf, stockStatus } from '../../core/queries.js';
 import { pageHead, kpi, emptyState, articleRow } from '../components.js';
 import { openSheet } from '../dialogs.js';
 import { printLabels } from '../print.js';
@@ -49,7 +49,7 @@ function cellSheet(id) {
     title: code,
     body: html`
       <p class="muted">${loc.desc || 'Pas de description'} · ${db().depots[loc.depotId].name}</p>
-      ${list.length ? html`<div class="list sheet-sec">${list.map(({ article, qty }) => articleRow({ article, qty, status: statusOf(article, qty), locs: [loc] }))}</div>`
+      ${list.length ? html`<div class="list sheet-sec">${list.map(({ article, qty }) => { const { min } = levelOf(db(), loc.depotId, article); return articleRow({ article, qty, min, status: stockStatus(min, qty), locs: [loc] }); })}</div>`
         : emptyState({ icon: 'box', title: 'Case vide', text: 'Aucune pièce n\'est rangée ici.' })}
       ${can('labels') ? html`<button type="button" class="btn btn--secondary btn--block sheet-sec" data-action="plan.label" data-id="${id}">${icon('qr')}Imprimer l'étiquette QR</button>` : ''}`,
   });

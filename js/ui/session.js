@@ -1,11 +1,13 @@
 // Session utilisateur : connexion, déconnexion, verrouillage après inactivité, bandeaux d'état, pastilles.
-import { state, store, ctx, depot, db, prefs } from './state.js';
+import { state, store, run, depot, db, prefs } from './state.js';
 import { recordAuth } from '../core/ops.js';
 import { isIdle } from '../core/auth.js';
 import { pendingIncoming } from '../core/queries.js';
+import { atelierOrders, centralQueue } from '../core/planning.js';
 import { $, setHtml, html, icon } from './dom.js';
 import { startRouter, stopRouter } from './router.js';
 import { closeTransient } from './dialogs.js';
+import { maybeShowBriefing } from './briefing.js';
 import { toast } from './toast.js';
 
 let lastActivity = Date.now();
@@ -39,7 +41,7 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.addEventList
 
 export function startSession(user, depotId) {
   state.session = { user: { id: user.id, name: user.name, role: user.role, depotId: user.depotId }, depotId, loginAt: Date.now() };
-  store.run((d) => recordAuth(d, ctx(), `Connexion de ${user.name}`));
+  if (!state.serverMode) run(recordAuth, { kind: 'login' }); // en mode serveur, la connexion est journalisée par le serveur
   prefs.set('lastDepot', depotId);
   $('#login').hidden = true;
   $('#app').hidden = false;
@@ -47,6 +49,7 @@ export function startSession(user, depotId) {
   updateChrome();
   startRouter();
   armIdle();
+  maybeShowBriefing();
   try { navigator.storage?.persist?.(); } catch { /* non supporté */ }
 }
 
@@ -55,11 +58,10 @@ export function startSession(user, depotId) {
  * APRÈS avoir détaché la session, sinon l'écouteur du store reverrait une session dont le compte a disparu.
  */
 export function endSession(message = '', { replaceDb = null } = {}) {
-  const s = state.session;
-  if (!s) return;
-  state.session = null; // d'abord : les écouteurs du store (revalidation) ne doivent plus voir de session
+  if (!state.session) return;
+  if (!replaceDb) try { run(recordAuth, { kind: 'logout' }); } catch { /* base indisponible : on déconnecte quand même */ }
+  state.session = null; // avant tout remplacement : les écouteurs du store (revalidation) ne doivent plus voir de session
   if (replaceDb) store.replace(replaceDb);
-  else try { store.run((d) => recordAuth(d, { user: s.user, depotId: s.depotId, now: new Date() }, `Déconnexion de ${s.user.name}`)); } catch { /* base indisponible : on déconnecte quand même */ }
   stopRouter();
   closeTransient();
   disarmIdle();
@@ -84,11 +86,12 @@ export function updateChrome() {
   chip.hidden = Object.keys(db().depots).length < 2;
   chip.textContent = d.code || d.name;
   chip.title = d.name;
-  const n = pendingIncoming(db(), d.id).length;
-  const count = $('#transfer-count');
+  // Pastille « Commandes » : ce qui attend une action dans ce dépôt
+  const n = d.kind === 'central' ? centralQueue(db(), d.id).toPrepare.length : atelierOrders(db(), d.id).toReceive.length + pendingIncoming(db(), d.id).length;
+  const count = $('#orders-count');
   count.hidden = n === 0;
   count.textContent = String(n);
-  count.setAttribute('aria-label', `${n} transfert(s) à réceptionner`);
+  count.setAttribute('aria-label', d.kind === 'central' ? `${n} commande(s) à préparer` : `${n} livraison(s) à réceptionner`);
   $('#menu-dot').hidden = true;
   $('#net-dot').hidden = state.online;
   updateBanners();

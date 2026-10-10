@@ -7,7 +7,7 @@ import { parseLocationPayload } from '../../lib/qr.js';
 import { icon, actions, $, setHtml, val } from '../dom.js';
 import { db, depot, can, run, prefs } from '../state.js';
 import { moveStock, createTransfer, undoMovement, cancelTransfer } from '../../core/ops.js';
-import { searchArticles, stockOf, articleLocations, locCode, families, depotLocationCodes, statusOf } from '../../core/queries.js';
+import { searchArticles, stockOf, articleLocations, locCode, families, depotLocationCodes, levelOf, stockStatus } from '../../core/queries.js';
 import { REASONS } from '../../core/config.js';
 import { thumb, statusPill, segmented, articleRow } from '../components.js';
 import { createScanner, scannerAvailable, cameraErrorMessage, decodePhoto } from '../scanner.js';
@@ -15,8 +15,10 @@ import { feedback } from '../feedback.js';
 import { toast } from '../toast.js';
 import { touch } from '../session.js';
 import { replaceHash, navigate } from '../router.js';
+import { openArticle } from './article-sheet.js';
 
-const MODES = { in: 'Entrée de stock', out: 'Sortie de stock', transfer: 'Transfert' };
+// « find » : consultation (la fiche de la pièce s'ouvre), depuis la barre de recherche de l'accueil.
+const MODES = { in: 'Entrée de stock', out: 'Sortie de stock', transfer: 'Transfert', find: 'Rechercher une pièce' };
 const VERBS = { in: 'Valider l\'entrée', out: 'Valider la sortie', transfer: 'Créer le transfert' };
 const PRESETS = [5, 10, 25];
 
@@ -35,7 +37,7 @@ const article = () => (S.ean ? db().articles[S.ean] : null);
 //    pour ne jamais détruire la vidéo en cours. ──
 function render(r) {
   const mode = r.rest[0];
-  if (MODES[mode]) S.mode = mode; else S.mode = prefs.get('scanMode', 'in');
+  if (MODES[mode]) S.mode = mode; else S.mode = prefs.get('scanMode', 'out');
   if (S.mode === 'transfer' && !otherDepots().length) S.mode = 'in';
   return html`
     <section class="scan" data-mode="${S.mode}">
@@ -61,6 +63,12 @@ function render(r) {
 }
 
 function paintMode() {
+  if (S.mode === 'find') {
+    setHtml($('#scan-mode'), html`<p class="muted scan__find-hint">${icon('info', 'i--sm')} Scannez ou saisissez une pièce : sa fiche s'ouvre (stock, emplacements, historique).</p>`);
+    document.querySelector('.scan')?.setAttribute('data-mode', 'find');
+    $('#topbar-title').textContent = MODES.find;
+    return;
+  }
   const items = [
     { value: 'in', label: 'Entrée', tone: 'in', icon: 'in' },
     { value: 'out', label: 'Sortie', tone: 'out', icon: 'out' },
@@ -142,7 +150,7 @@ function reasonChips() {
 function knownCard(a) {
   const d = depot();
   const qty = stockOf(db(), d.id, a.ean);
-  const status = statusOf(a, qty);
+  const status = stockStatus(levelOf(db(), d.id, a).min, qty);
   const locs = articleLocations(db(), a.ean, d.id);
   const others = Object.values(db().depots).filter((x) => x.id !== d.id).map((x) => ({ name: x.code || x.name, qty: stockOf(db(), x.id, a.ean) })).filter((x) => x.qty > 0);
   const weak = a.ean.length === 13 && hasValidCheck(a.ean) === false;
@@ -178,7 +186,7 @@ function unknownCard() {
         <div class="grow"><p class="eyebrow">Code inconnu</p><h3 class="scan-card__name num">${S.ean}</h3></div>
         <button type="button" class="icon-btn" data-action="scan.clear" aria-label="Changer de code">${icon('x')}</button>
       </header>
-      ${S.mode !== 'in' ? html`<p class="muted">Cette pièce n'est pas encore au catalogue : il n'y a rien à ${S.mode === 'out' ? 'sortir' : 'transférer'}.</p>
+      ${S.mode !== 'in' ? html`<p class="muted">Cette pièce n'est pas encore au catalogue : il n'y a rien à ${{ out: 'sortir', find: 'consulter' }[S.mode] ?? 'transférer'}.</p>
         ${canMake ? html`<button type="button" class="btn btn--in btn--block" data-action="scan.mode" data-value="in">Créer la pièce (entrée)</button>` : ''}`
         : canMake ? html`
         <p class="muted">Nouvelle pièce : complétez la fiche, elle sera créée avec l'entrée.</p>
@@ -195,7 +203,7 @@ function unknownCard() {
 
 // ── Logique ──
 function setMode(mode) {
-  if (!MODES[mode] || (mode === 'transfer' && !otherDepots().length)) return;
+  if (!MODES[mode] || mode === 'find' || (mode === 'transfer' && !otherDepots().length)) return;
   S.mode = mode; S.reason = '';
   prefs.set('scanMode', mode);
   replaceHash(`scan/${mode}`);
@@ -209,6 +217,7 @@ function pick(ean) {
   S.query = ''; S.suggest = [];
   const input = $('#scan-q'); if (input) input.value = '';
   paintSuggest();
+  if (S.mode === 'find' && db().articles[ean]) { feedback('scan'); S.ean = null; openArticle(ean); return; }
   scanner?.pause();
   if (scanner) { S.cam = scanner.running ? 'paused' : S.cam; paintCamera(); }
   paintCard();
@@ -365,13 +374,13 @@ export function initScan() {
         if (S.mode === 'transfer') {
           const r = run(createTransfer, { ean: S.ean, qty: f.qty, toDepotId: f.to });
           const to = db().depots[f.to];
-          afterSuccess({ label: `${f.qty} × ${a.name} → ${to.name}`, units: f.qty, sign: -1, undo: () => run(cancelTransfer, r.transferId) });
+          afterSuccess({ label: `${f.qty} × ${a.name} → ${to.name}`, units: f.qty, sign: -1, undo: () => run(cancelTransfer, { id: r.transferId }) });
         } else {
           const r = run(moveStock, { type: S.mode, ean: S.ean, qty: f.qty, reason: S.reason, locCode: f.loc || undefined, article: !a ? f.draft : undefined });
           const name = db().articles[S.ean].name;
           afterSuccess({
             label: `${S.mode === 'in' ? '+' : '−'}${fmtInt(f.qty)} × ${name} · stock ${fmtInt(r.stock)}${r.alert ? ' ⚠' : ''}`,
-            units: f.qty, sign: S.mode === 'in' ? 1 : -1, undo: () => run(undoMovement, r.historyId),
+            units: f.qty, sign: S.mode === 'in' ? 1 : -1, undo: () => run(undoMovement, { historyId: r.historyId }),
           });
         }
       } catch (e) { el.disabled = false; feedback('error'); throw e; }

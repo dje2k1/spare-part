@@ -4,7 +4,7 @@ import { test, expect, seedDemo, login, loginDemo, db, typePin } from './helpers
 test('5 PIN erronés : compte verrouillé, même le bon PIN est refusé pendant le délai', async ({ page }) => {
   await seedDemo(page);
   await page.goto('./');
-  await page.locator('[data-action="login.depot"]').first().click();
+  await page.locator('[data-action="login.depot"]', { hasText: 'Paris' }).click();
   await page.locator('[data-action="login.user"]', { hasText: 'Julie Laurent' }).click();
   for (let i = 0; i < 5; i++) {
     await typePin(page, '0000');

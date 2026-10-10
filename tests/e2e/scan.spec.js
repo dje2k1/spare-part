@@ -14,7 +14,7 @@ test.describe('scan continu', () => {
     const before = await db(page);
     const ean = eanByName(before, 'Zip YKK 20cm');
     const was = stockOf(before, 'Paris', ean);
-    await page.locator('a.action--in').click();
+    await page.goto('./#/scan/in');
     await expect(page.locator('#topbar-title')).toHaveText('Entrée de stock');
     await page.locator('#scan-q').fill('zip ykk');
     await page.locator('#scan-suggest .row', { hasText: '20cm' }).click();

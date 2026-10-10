@@ -3,7 +3,7 @@ import { html } from '../../lib/text.js';
 import { shrink } from '../../lib/image.js';
 import { icon, actions, $, setHtml, val } from '../dom.js';
 import { can, run, storage, state } from '../state.js';
-import { importSuggestedParts } from '../../core/ops.js';
+import { importSuggestedPartsOp } from '../../core/registry.js';
 import { analyzePhoto, readApiKey, saveApiKey, clearApiKey, AiError, AI } from '../../core/ai.js';
 import { pageHead } from '../components.js';
 import { navigate } from '../router.js';
@@ -108,7 +108,7 @@ export function initPhoto() {
     'photo.reset': () => { P.phase = 'idle'; P.photo = null; P.result = null; paint(); },
     'photo.import'() {
       const parts = P.result.parts.filter((p) => P.selected.has(p.id));
-      const eans = run(importSuggestedParts, parts);
+      const eans = run(importSuggestedPartsOp, { parts });
       toast(`${eans.length} pièce(s) ajoutée(s) au catalogue.`, { tone: 'ok' });
       navigate('articles');
     },

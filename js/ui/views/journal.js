@@ -14,7 +14,7 @@ const J = { tab: 'moves', q: '', type: 'all', days: 30, all: false, aType: 'all'
 let timer = null;
 
 const TYPE_FILTERS = { all: null, in: ['in'], out: ['out'], transfer: ['transfer', 'transfer_in', 'transfer_cancel'], inv: ['inv'] };
-const AUDIT_ICON = { in: 'in', out: 'out', inv: 'clipboard', transfer: 'swap', login: 'lock', admin: 'settings' };
+const AUDIT_ICON = { in: 'in', out: 'out', inv: 'clipboard', transfer: 'swap', order: 'truck', login: 'lock', admin: 'settings' };
 
 function movesQuery(limit = J.limit) {
   return movements(db(), {

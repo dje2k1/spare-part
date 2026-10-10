@@ -35,7 +35,7 @@ test.describe('articles et fiche', () => {
     await expect(page.locator('#sheet')).toBeVisible();
     await page.locator('[data-submit="art.adjust"] [name=qty]').fill(String(was + 7));
     await page.locator('[data-submit="art.adjust"] [name=reason]').selectOption('Inventaire');
-    await page.getByRole('button', { name: 'Appliquer' }).click();
+    await page.locator('[data-submit="art.adjust"] button[type=submit]').click();
     await expect(toastText(page)).toContainText('Stock corrigé');
     const after = await db(page);
     expect(stockOf(after, 'Paris', ean)).toBe(was + 7);
@@ -85,12 +85,6 @@ test.describe('articles et fiche', () => {
     await expect(page.locator('#sheet [data-err]')).not.toBeEmpty();
     expect(Object.values((await db(page)).articles).some((a) => a.name === 'Autre nom')).toBe(false);
   });
-
-  test('réassort : liste des pièces sous le seuil avec quantité suggérée', async ({ page }) => {
-    await go(page, '#/reorder');
-    await expect(page.locator('#view .row').first()).toBeVisible();
-    await expect(page.locator('#view .row__qty').first()).toHaveText(/^\+\d+/);
-  });
 });
 
 test.describe('opérateur : droits limités', () => {
@@ -108,7 +102,7 @@ test.describe('opérateur : droits limités', () => {
     await go(page, '#/articles');
     await page.locator('#articles-list .row').first().click();
     await expect(page.locator('[data-submit="art.adjust"]')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Fiche' }).click();
+    await page.getByRole('button', { name: 'Fiche', exact: true }).click();
     await expect(page.locator('#sheet')).toContainText('Lecture seule');
     await expect(page.locator('[data-action="art.delete"]')).toHaveCount(0);
   });
@@ -126,7 +120,7 @@ test.describe('plan, transferts, journal, tableau de bord', () => {
 
   test('transfert reçu : le stock du dépôt de destination augmente', async ({ page }) => {
     const before = await db(page);
-    const t = before.transfers.find((x) => x.status === 'pending');
+    const t = Object.values(before.transfers).find((x) => x.status === 'pending' && x.toDepotId === Object.values(before.depots).find((d) => d.code === 'DEP-01').id);
     const was = stockOf(before, 'Paris', t.ean);
     await go(page, '#/transfers');
     await expect(page.locator('.tr-card')).toHaveCount(1);
@@ -134,8 +128,9 @@ test.describe('plan, transferts, journal, tableau de bord', () => {
     await expect(toastText(page)).toContainText(/reçu|Réception/i);
     const after = await db(page);
     expect(stockOf(after, 'Paris', t.ean)).toBe(was + t.qty);
-    expect(after.transfers.find((x) => x.id === t.id).status).toBe('done');
-    await expect(page.locator('#transfer-count')).toBeHidden();
+    expect(after.transfers[t.id].status).toBe('done');
+    const badge = Number(await page.locator('#orders-count').innerText().catch(() => '0')) || 0;
+    expect(badge).toBe(Object.values(after.orders).filter((o) => o.depotId === t.toDepotId && o.status === 'shipped').length, 'pastille : livraisons restant à réceptionner');
   });
 
   test('journal : filtres par type et recherche, onglet audit réservé aux responsables', async ({ page }) => {
@@ -158,4 +153,16 @@ test.describe('plan, transferts, journal, tableau de bord', () => {
     await expect(page.locator('#view')).toContainText('Entrées 7 j');
     await expect(page.locator('.chart')).toBeVisible();
   });
+});
+
+test('réassort : pièce sous le seuil sans commande en cours → quantité suggérée', async ({ page }) => {
+  await loginDemo(page, { ...SOPHIE, mutate(d) {
+    const paris = Object.values(d.depots).find((x) => x.code === 'DEP-01').id;
+    const busy = new Set(Object.values(d.orders).filter((o) => o.depotId === paris && ['draft', 'submitted', 'picking', 'shipped'].includes(o.status)).flatMap((o) => o.lines.map((l) => l.ean)));
+    const a = Object.values(d.articles).find((x) => !busy.has(x.ean) && x.threshold > 0);
+    d.stocks[paris][a.ean] = 0;
+  } });
+  await go(page, '#/reorder');
+  await expect(page.locator('#view .row').first()).toBeVisible();
+  await expect(page.locator('#view .row__qty').first()).toHaveText(/^\+\d+/);
 });

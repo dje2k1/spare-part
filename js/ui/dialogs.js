@@ -14,6 +14,7 @@ const drawer = () => $('#drawer');
 let sheetPushed = false;
 let sheetOnClose = null;
 let sheetClosing = [];
+let sheetGen = 0; // incrémenté à chaque ouverture : un délai de fermeture ne vise que SA feuille
 
 // ── Feuille ──
 /**
@@ -31,6 +32,7 @@ export function openSheet({ title, body, foot, mount, onClose }) {
     <div class="sheet__body">${body}</div>
     ${foot ? html`<div class="sheet__foot">${foot}</div>` : ''}`);
   sheetOnClose = onClose ?? null;
+  sheetGen++;
   if (!dlg.open) {
     dlg.showModal();
     history.pushState({ sheet: true }, '');
@@ -44,10 +46,12 @@ export function openSheet({ title, body, foot, mount, onClose }) {
 export function closeSheet() {
   const dlg = sheet();
   if (!dlg.open) return Promise.resolve();
+  const gen = sheetGen;
   return new Promise((resolve) => {
     sheetClosing.push(resolve);
     if (sheetPushed && history.state?.sheet) history.back(); else dlg.close();
-    setTimeout(() => { if (dlg.open) dlg.close(); }, 400); // filet de sécurité
+    // Filet de sécurité si l'événement « popstate » n'arrive pas — sans jamais fermer une feuille rouverte entre-temps
+    setTimeout(() => { if (dlg.open && gen === sheetGen) dlg.close(); }, 400);
   });
 }
 export const isSheetOpen = () => sheet().open;

@@ -54,23 +54,23 @@ function render() {
     <div class="pad">${segmented({ action: 'tr.tab', value: tab, items, label: 'Type de transferts' })}</div>${content}</section>`;
 }
 
-export const transfersRoute = { title: 'Transferts', nav: 'transfers', render };
+export const transfersRoute = { title: 'Transferts', back: true, render };
 
 export function initTransfers() {
   actions({
     'tr.tab': (el) => { tab = el.dataset.value; refresh(); },
     'tr.receive': (el) => {
-      const r = run(receiveTransfer, el.dataset.id);
+      const r = run(receiveTransfer, { id: el.dataset.id });
       toast(`Réceptionné · stock ${fmtInt(r.stock)}`, { tone: 'ok' });
     },
     async 'tr.refuse'(el) {
       if (!(await confirmDialog({ title: 'Refuser ce transfert ?', message: 'Les pièces retournent au stock du dépôt expéditeur.', confirmLabel: 'Refuser', danger: true }))) return;
-      run(refuseTransfer, el.dataset.id);
+      run(refuseTransfer, { id: el.dataset.id });
       toast('Transfert refusé : stock restitué à l\'expéditeur.');
     },
     async 'tr.cancel'(el) {
       if (!(await confirmDialog({ title: 'Annuler ce transfert ?', message: 'Les pièces reviennent dans le stock de ce dépôt.', confirmLabel: 'Annuler le transfert', cancelLabel: 'Conserver', danger: true }))) return;
-      run(cancelTransfer, el.dataset.id);
+      run(cancelTransfer, { id: el.dataset.id });
       toast('Transfert annulé : stock restitué.', { tone: 'ok' });
     },
   });

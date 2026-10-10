@@ -1,6 +1,6 @@
 // Routeur à base de hash (#/articles?f=alert) : le bouton « Retour » du navigateur/téléphone fonctionne,
 // les écrans sont partageables (liens profonds) et l'état est restauré au rechargement.
-import { $, $$, setHtml } from './dom.js';
+import { $, $$, setHtml, whenReleased } from './dom.js';
 import { state, can } from './state.js';
 import { closeTransient } from './dialogs.js';
 import { toast } from './toast.js';
@@ -24,7 +24,8 @@ const depth = () => (Number.isInteger(history.state?.i) ? history.state.i : 0);
 
 /** navigate('articles', { params: { f: 'alert' } }) ou navigate('scan/out'). */
 export function navigate(path, { params, replace = false } = {}) {
-  const qs = params ? `?${new URLSearchParams(params)}` : '';
+  const search = params ? new URLSearchParams(params).toString() : '';
+  const qs = search ? `?${search}` : '';
   const hash = `#/${path}${qs}`;
   if (location.hash === hash) { render({ keepScroll: true }); return; }
   if (replace) history.replaceState({ i: depth() }, '', hash);
@@ -42,9 +43,25 @@ function paintChrome(def, r) {
   $$('[data-nav]').forEach((a) => (a.dataset.nav === (def.nav ?? r.name) ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
 }
 
+let rendering = false;
+let again = false;
+const refreshLater = () => render({ keepScroll: true });
+
 /** Rend la route courante. `keepScroll` : mise à jour sur place (données modifiées). */
 export function render({ keepScroll = false } = {}) {
   if (!state.session) return;
+  // Un rendu déclenché PENDANT un rendu (changement de champ au moment du remplacement) est rejoué après
+  if (rendering) { again = true; return; }
+  try {
+    rendering = true;
+    renderNow({ keepScroll });
+  } finally {
+    rendering = false;
+  }
+  if (again) { again = false; whenReleased(refreshLater); }
+}
+
+function renderNow({ keepScroll }) {
   lastHash = location.hash;
   const r = parseHash();
   let def = routes[r.name];
@@ -64,7 +81,8 @@ export function render({ keepScroll = false } = {}) {
   else { window.scrollTo(0, 0); root.focus({ preventScroll: true }); }
 }
 
-export const refresh = () => render({ keepScroll: true });
+/** Mise à jour sur place après une modification des données (différée si un geste est en cours). */
+export const refresh = () => whenReleased(refreshLater);
 
 /** Met à jour l'URL sans re-rendre l'écran (ex. changement de mode dans le scan). */
 export function replaceHash(path) {

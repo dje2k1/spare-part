@@ -55,7 +55,7 @@ test('aucun gestionnaire en ligne ni style en ligne dans les gabarits JS', () =>
     const text = src(f);
     if (/\bon(click|input|change|submit|keydown|keyup|load|error)\s*=\s*["'`]/.test(text)) bad.push(`${rel(f)} : gestionnaire en ligne`);
     // Seules les variables CSS (--w, --h…) sont tolérées : elles portent une donnée, pas de la mise en forme.
-    for (const m of text.matchAll(/style="([^"]*)"/g)) if (!/^(--[a-z-]+:[^;"]*;?)+$/.test(m[1])) bad.push(`${rel(f)} : style en ligne « ${m[1].slice(0, 40)} » (utiliser une classe)`);
+    for (const m of text.matchAll(/style="([^"]*)"/g)) if (!/^(--[a-z-]+:[^;"]*;?)+$/.test(m[1]) && !/^\$\{cssVars\(/.test(m[1])) bad.push(`${rel(f)} : style en ligne « ${m[1].slice(0, 40)} » (utiliser une classe)`);
   }
   assert.deepEqual(bad, []);
 });
@@ -86,6 +86,12 @@ test('attributs ARIA d\'état : html`` ignore les booléens, il faut String(…)
   for (const f of jsFiles) {
     for (const m of src(f).matchAll(/aria-(pressed|selected|checked|expanded|current|busy)="\$\{(?!String\()([^}]*)\}"/g)) bad.push(`${rel(f)} : aria-${m[1]}="\${${m[2]}}" rendrait un attribut vide`);
   }
+  assert.deepEqual(bad, []);
+});
+
+test('accessibilité : pas d\'aria-label sur un <span> sans rôle (attribut interdit, ignoré par les lecteurs d\'écran)', () => {
+  const bad = [];
+  for (const f of jsFiles) for (const m of src(f).matchAll(/<span(?![^>]*\srole=)[^>]*\saria-label=/g)) bad.push(`${rel(f)} : ${m[0].slice(0, 60)}`);
   assert.deepEqual(bad, []);
 });
 
