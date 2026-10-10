@@ -1,0 +1,108 @@
+/* Jetons de design — MODE Stock.
+   Identité conservée (noir, blanc, or, Playfair Display + Jost), contrastes WCAG AA vérifiés par
+   tests/unit/design-tokens.test.js (texte ≥ 4,5:1, éléments d'interface ≥ 3:1). */
+
+@font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: normal; font-display: swap; src: url('../fonts/playfair-display-400.woff2') format('woff2'); }
+@font-face { font-family: 'Playfair Display'; font-weight: 500; font-style: normal; font-display: swap; src: url('../fonts/playfair-display-500.woff2') format('woff2'); }
+@font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: italic; font-display: swap; src: url('../fonts/playfair-display-400-italic.woff2') format('woff2'); }
+@font-face { font-family: 'Jost'; font-weight: 300 700; font-style: normal; font-display: swap; src: url('../fonts/jost-variable.woff2') format('woff2'); }
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg: #ffffff;
+  --bg-soft: #f7f6f3;
+  --bg-sunken: #efede8;
+  --surface: #ffffff;
+  --overlay: rgba(17, 17, 17, 0.55);
+
+  /* Texte */
+  --ink: #111111;
+  --ink-2: #4a4741;
+  --ink-3: #6b665d;
+  --on-ink: #ffffff;
+
+  /* Traits */
+  --line: #e4e1da;
+  --line-strong: #cfcac0;
+  --control: #8a857b; /* bordure des champs : ≥ 3:1 sur --bg */
+
+  /* Accent or : décoratif (--gold) et texte (--gold-ink) */
+  --gold: #a08947;
+  --gold-ink: #7a6526;
+  --gold-bg: #f6f0df;
+
+  /* États */
+  --red: #a4161a;     --red-bg: #fbeceb;
+  --green: #17653a;   --green-bg: #e8f4ed;
+  --amber: #8a5300;   --amber-bg: #fdf2dc;
+  --blue: #1c4f9c;    --blue-bg: #e9f0fb;
+
+  /* Ombres */
+  --shadow-sm: 0 1px 2px rgba(17, 17, 17, 0.06);
+  --shadow-md: 0 6px 24px rgba(17, 17, 17, 0.12);
+  --shadow-lg: 0 18px 48px rgba(17, 17, 17, 0.22);
+
+  /* Typographie */
+  --serif: 'Playfair Display', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --sans: 'Jost', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --fs-xs: 0.75rem;   /* 12 : libellés en capitales */
+  --fs-sm: 0.8125rem; /* 13 */
+  --fs-md: 0.9375rem; /* 15 */
+  --fs-base: 1rem;    /* 16 : champs (évite le zoom iOS) */
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: 2rem;
+  --fs-3xl: 2.75rem;
+
+  /* Espacements (échelle de 4) */
+  --s1: 0.25rem; --s2: 0.5rem; --s3: 0.75rem; --s4: 1rem; --s5: 1.25rem; --s6: 1.5rem; --s8: 2rem; --s12: 3rem;
+
+  /* Formes */
+  --r-sm: 2px; --r-md: 6px; --r-lg: 14px; --r-pill: 999px;
+
+  /* Dimensions */
+  --tap: 3rem;          /* 48 : cible tactile */
+  --topbar-h: 3.5rem;
+  --tabbar-h: 4.25rem;
+  --content-w: 44rem;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 180ms;
+}
+
+/* Thème sombre : automatique selon le système (sauf data-theme="light"), ou forcé par data-theme="dark".
+   Les deux blocs portent les mêmes valeurs — un test vérifie qu'ils restent identiques. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0f0f0e; --bg-soft: #171715; --bg-sunken: #1f1e1b; --surface: #161614; --overlay: rgba(0, 0, 0, 0.7);
+    --ink: #f4f2ec; --ink-2: #cfcbc0; --ink-3: #a39e92; --on-ink: #111111;
+    --line: #2c2a26; --line-strong: #46433c; --control: #8b867b;
+    --gold: #c4a95a; --gold-ink: #d6bd73; --gold-bg: #2a2412;
+    --red: #ff9b93; --red-bg: #2e1715;
+    --green: #7fd3a0; --green-bg: #13261c;
+    --amber: #f2c36f; --amber-bg: #2b2110;
+    --blue: #9bbcf3; --blue-bg: #14203a;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.55);
+    --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.7);
+  }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f0f0e; --bg-soft: #171715; --bg-sunken: #1f1e1b; --surface: #161614; --overlay: rgba(0, 0, 0, 0.7);
+  --ink: #f4f2ec; --ink-2: #cfcbc0; --ink-3: #a39e92; --on-ink: #111111;
+  --line: #2c2a26; --line-strong: #46433c; --control: #8b867b;
+  --gold: #c4a95a; --gold-ink: #d6bd73; --gold-bg: #2a2412;
+  --red: #ff9b93; --red-bg: #2e1715;
+  --green: #7fd3a0; --green-bg: #13261c;
+  --amber: #f2c36f; --amber-bg: #2b2110;
+  --blue: #9bbcf3; --blue-bg: #14203a;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.7);
+}

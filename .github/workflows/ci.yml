@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+      - run: npm ci
+      - name: Dépendances du serveur de synchronisation
+        run: npm ci --prefix server
+      - name: Tests unitaires (métier, PWA, jetons de design, règles statiques)
+        run: npm run test:unit
+      - name: Tests du serveur (journal, API, sécurité, temps réel, moteur de synchronisation, relais IA)
+        run: npm run test:server
+      - name: Navigateur de test
+        run: npx playwright install --with-deps chromium
+      - name: Tests de bout en bout (sous-chemin /spare-part/)
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+      - name: Tests de bout en bout (racine du site)
+        run: npx playwright test smoke offline security
+        env:
+          CI: 'true'
+          PW_PREFIX: /
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

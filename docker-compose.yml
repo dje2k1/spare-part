@@ -1,0 +1,33 @@
+# Déploiement type : MODE Stock + Caddy (HTTPS automatique Let's Encrypt). Voir docs/DEPLOIEMENT.md.
+#   cp .env.example .env    (puis renseigner ORG_CODE, DOMAIN, administrateur initial…)
+#   docker compose up -d --build
+services:
+  mode-stock:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TRUST_PROXY: "1" # derrière Caddy : adresse IP réelle et HTTPS pris en compte
+    volumes:
+      - mode-data:/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - mode-stock
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  mode-data:
+  caddy-data:
+  caddy-config:

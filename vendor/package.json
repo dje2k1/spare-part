@@ -1,0 +1,6 @@
+{
+  "name": "mode-stock-vendor",
+  "private": true,
+  "type": "commonjs",
+  "description": "Bibliothèques tierces (UMD) : traitées comme CommonJS par Node pour les tests ; sans effet dans le navigateur."
+}
