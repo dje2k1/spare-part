@@ -1,4 +1,4 @@
-import { test, expect, loginDemo, db, toastText } from './helpers.js';
+import { test, expect, loginDemo, db, toastText, stockedArticle } from './helpers.js';
 import { KEYS } from '../../js/core/config.js';
 
 const stockOf = (data, depotName, ean) => {
@@ -30,13 +30,14 @@ test.describe('scan continu', () => {
 
   test('annuler immédiatement une opération', async ({ page }) => {
     const data = await db(page);
-    const ean = eanByName(data, 'Bouton nacre');
+    const art = stockedArticle(data, 'Paris', 2);
+    const ean = art.ean;
     const was = stockOf(data, 'Paris', ean);
     await page.goto('./#/scan/out');
     await page.locator('#scan-q').fill(ean);
     await page.locator('#scan-q').press('Enter');
     await page.locator('.scan-card__go').click();
-    await expect(toastText(page)).toContainText('−1 × Bouton nacre');
+    await expect(toastText(page)).toContainText(`−1 × ${art.name}`);
     expect(stockOf(await db(page), 'Paris', ean)).toBe(was - 1);
     await page.locator('.toast__action').click();
     await expect(page.locator('.toast__text').last()).toContainText('Opération annulée');
@@ -96,7 +97,7 @@ test.describe('scan continu', () => {
 
   test('mode transfert : destinataire, débit immédiat, annulation restitue le stock', async ({ page }) => {
     const data = await db(page);
-    const ean = eanByName(data, 'Zip YKK 20cm');
+    const ean = stockedArticle(data, 'Paris', 3).ean;
     const was = stockOf(data, 'Paris', ean);
     await page.goto('./#/scan/transfer');
     await page.locator('#scan-q').fill(ean);

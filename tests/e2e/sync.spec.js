@@ -3,7 +3,7 @@
 // conflit entre deux sites, analyse photo relayée par le serveur (API Anthropic simulée).
 import http from 'node:http';
 import AxeBuilder from '@axe-core/playwright';
-import { test as base, expect, go, toastText } from './helpers.js';
+import { test as base, expect, go, toastText, stockedArticle } from './helpers.js';
 import { startApp, ORG, depotByCode } from '../server/helpers.js';
 
 const test = base.extend({
@@ -58,7 +58,11 @@ async function shownStock(page, ean) {
   return Number((await page.locator('#articles-list .row__qty').innerText()).replace(/\D/g, ''));
 }
 
+/** Les animations d'arrivée (opacité, glissement) doivent être terminées : axe mesure les contrastes réels. */
+const settled = (page) => page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' || !(a.effect?.getComputedTiming().endTime < 3000)), null, { timeout: 5000 });
+
 async function audit(page, label) {
+  await settled(page);
   const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(violations.map((v) => `${label} — ${v.id} : ${v.help} (${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' | ')})`)).toEqual([]);
 }
@@ -90,14 +94,14 @@ test.describe('mode serveur', () => {
     // aucune empreinte de PIN d'un autre compte sur l'appareil
     const stored = await page.evaluate(() => JSON.stringify(localStorage));
     expect(stored.match(/PBKDF2/g)?.length ?? 0).toBe(1); // la sienne seulement (déverrouillage hors ligne)
-    const nacre = articleNamed(srv, 'Bouton nacre');
-    const was = serverStock(srv, 'DEP-01', nacre.ean);
+    const art = stockedArticle(srv.app.store.db, 'Paris', 2);
+    const was = serverStock(srv, 'DEP-01', art.ean);
     await page.locator('.sheet__close, [data-action="sheet.close"]').first().click({ timeout: 1000 }).catch(() => {});
-    await scanOut(page, nacre.ean, 2);
-    await expect(toastText(page)).toContainText(`−2 × ${nacre.name}`);
-    await expect.poll(() => serverStock(srv, 'DEP-01', nacre.ean)).toBe(was - 2);
+    await scanOut(page, art.ean, 2);
+    await expect(toastText(page)).toContainText(`−2 × ${art.name}`);
+    await expect.poll(() => serverStock(srv, 'DEP-01', art.ean)).toBe(was - 2);
     await expect(page.locator('#sync-btn')).toHaveAttribute('data-state', 'ok');
-    expect(srv.app.store.db.history[0]).toMatchObject({ ean: nacre.ean, type: 'out', operator: 'Sophie Martin' });
+    expect(srv.app.store.db.history[0]).toMatchObject({ ean: art.ean, type: 'out', operator: 'Sophie Martin' });
   });
 
   test('temps réel : la commande d\'un atelier apparaît à l\'entrepôt sans recharger', async ({ browser, srv }) => {
@@ -126,7 +130,7 @@ test.describe('mode serveur', () => {
 
   test('hors ligne : la saisie est conservée, signalée, puis envoyée au retour du réseau', async ({ page, context, srv }) => {
     await connect(page, srv, JULIE);
-    const zip = articleNamed(srv, 'Zip YKK 20cm');
+    const zip = stockedArticle(srv.app.store.db, 'Paris', 2);
     const was = serverStock(srv, 'DEP-01', zip.ean);
     await context.setOffline(true);
     await expect(page.locator('#sync-btn')).toHaveAttribute('data-state', 'offline', { timeout: 8000 });
@@ -214,7 +218,7 @@ test.describe('application rouverte sans réseau', () => {
     await expect.poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.active?.state), { timeout: 15_000 }).toBe('activated');
     await page.reload();
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-    const zip = articleNamed(srv, 'Zip YKK 20cm');
+    const zip = stockedArticle(srv.app.store.db, 'Paris', 2);
     const was = serverStock(srv, 'DEP-01', zip.ean);
 
     await context.setOffline(true);
