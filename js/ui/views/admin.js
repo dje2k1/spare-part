@@ -9,7 +9,7 @@ import { hashPin, pinPolicy, upgradeLegacyPins } from '../../core/auth.js';
 import { buildFreshDb } from '../../core/seed.js';
 import { locCode, stockOf, daysSince, searchArticles } from '../../core/queries.js';
 import { KEYS, ROLES, DEPOT_KINDS } from '../../core/config.js';
-import { pageHead, emptyState } from '../components.js';
+import { pageHead, emptyState, avatar } from '../components.js';
 import { openSheet, closeSheet, confirmDialog, promptDialog } from '../dialogs.js';
 import { printLabels, printStockReport } from '../print.js';
 import { endSession } from '../session.js';
@@ -36,7 +36,7 @@ function render(r) {
   const sec = allowed().find((s) => s.key === key);
   if (!sec) {
     return html`<section>${pageHead({ eyebrow: 'Paramètres', title: 'Administration' })}
-      <ul class="list">${allowed().map((s) => html`<li><a class="row" href="#/admin?s=${s.key}"><span class="row__lead thumb">${icon(s.icon)}</span><span class="row__body"><span class="row__title">${s.title}</span><span class="row__meta">${s.desc}</span></span>${icon('chevron', 'i--sm')}</a></li>`)}</ul></section>`;
+      <ul class="list">${allowed().map((s, i) => html`<li><a class="row" href="#/admin?s=${s.key}"><span class="row__lead thumb hue-${(i * 3 + 2) % 10}">${icon(s.icon)}</span><span class="row__body"><span class="row__title">${s.title}</span><span class="row__meta">${s.desc}</span></span>${icon('chevron', 'i--sm')}</a></li>`)}</ul></section>`;
   }
   const body = { users, depots, locations, import: importer, export: exporter, data }[sec.key]();
   return html`<section>${pageHead({ eyebrow: 'Administration', title: sec.title })}${body}</section>`;
@@ -52,7 +52,7 @@ export const adminRoute = {
 function users() {
   const list = Object.values(db().users).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   return html`<div class="pad"><button type="button" class="btn btn--primary btn--sm" data-action="adm.user" data-id="">${icon('plus', 'i--sm')}Utilisateur</button></div>
-    <ul class="list">${list.map((u) => html`<li><button type="button" class="row" data-action="adm.user" data-id="${u.id}"><span class="row__lead avatar">${u.name.charAt(0).toUpperCase()}</span>
+    <ul class="list">${list.map((u) => html`<li><button type="button" class="row" data-action="adm.user" data-id="${u.id}"><span class="row__lead">${avatar(u.name)}</span>
       <span class="row__body"><span class="row__title">${u.name}</span><span class="row__meta">${ROLES[u.role].label} · ${db().depots[u.depotId]?.name ?? '—'}</span></span>${icon('chevron', 'i--sm')}</button></li>`)}</ul>`;
 }
 

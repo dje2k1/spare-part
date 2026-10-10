@@ -21,6 +21,7 @@ export default defineConfig({
     locale: 'fr-FR',
     timezoneId: 'Europe/Paris',
     serviceWorkers: 'block', // les tests dédiés au hors-ligne l'autorisent explicitement
+    reducedMotion: 'reduce', // tests déterministes : animations décoratives coupées (préférence système respectée par l'application)
     launchOptions: { executablePath },
     trace: 'retain-on-failure',
   },

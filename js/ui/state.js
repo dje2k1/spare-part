@@ -66,10 +66,8 @@ export const prefs = {
   },
 };
 
+/** Thème clair / sombre / automatique. (La couleur de la barre d'état suit la section : voir look.js.) */
 export function applyTheme(theme = prefs.get('theme', 'auto')) {
   const root = document.documentElement;
   if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
-  const meta = document.querySelector('meta[name="theme-color"]');
-  const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-  if (meta) meta.content = dark ? '#0f0f0e' : '#111111';
 }

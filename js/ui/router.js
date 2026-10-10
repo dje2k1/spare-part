@@ -4,6 +4,7 @@ import { $, $$, setHtml, whenReleased } from './dom.js';
 import { state, can } from './state.js';
 import { closeTransient } from './dialogs.js';
 import { toast } from './toast.js';
+import { enterSection } from './look.js';
 
 /** @type {Record<string, {title:string|((r:object)=>string), nav?:string, back?:boolean, perm?:string, render:(r:object)=>import('../lib/text.js').SafeHtml, mount?:(root:HTMLElement,r:object)=>void, unmount?:()=>void, refresh?:'render'|'none'}>} */
 const routes = Object.create(null);
@@ -71,14 +72,43 @@ function renderNow({ keepScroll }) {
   if (sameRoute && keepScroll && def.refresh === 'none') { current = r; return; }
   if (!sameRoute || !keepScroll) { currentDef?.unmount?.(); if (!sameRoute) closeTransient(); }
   current = r; currentDef = def;
+  enterSection(r.name, r.rest);
   paintChrome(def, r);
   const root = $('#view');
   const y = window.scrollY;
+  const arriving = !(keepScroll && sameRoute);
+  if (arriving) markEntering(root);
   setHtml(root, def.render(r));
   def.mount?.(root, r);
   document.body.classList.toggle('no-tabbar', def.nav === null);
   if (keepScroll && sameRoute) window.scrollTo(0, y);
   else { window.scrollTo(0, 0); root.focus({ preventScroll: true }); }
+  $('.topbar')?.classList.toggle('has-hero', Boolean(root.querySelector('.page-head, .hero')));
+  syncTopbar();
+}
+
+// Animations d'arrivée : uniquement en entrant sur un écran (pas lors d'une mise à jour des données).
+let enterTimer = null;
+function markEntering(root) {
+  clearTimeout(enterTimer);
+  root.classList.remove('is-entering');
+  void root.offsetWidth; // relance l'animation même si la classe était déjà là
+  root.classList.add('is-entering');
+  enterTimer = setTimeout(() => root.classList.remove('is-entering'), 950);
+}
+
+// Barre du haut : ombre au défilement ; titre affiché une fois l'en-tête coloré de la page dépassé.
+let ticking = false;
+function syncTopbar() {
+  ticking = false;
+  const bar = $('.topbar');
+  if (!bar) return;
+  const hero = $('#view')?.querySelector('.page-head, .hero');
+  const limit = bar.getBoundingClientRect().bottom + 4;
+  bar.classList.toggle('is-scrolled', hero ? hero.getBoundingClientRect().bottom < limit + 24 : window.scrollY > 4);
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(syncTopbar); } }, { passive: true });
 }
 
 /** Mise à jour sur place après une modification des données (différée si un geste est en cours). */

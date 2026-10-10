@@ -13,14 +13,15 @@ const today = () => new Date().toISOString().slice(0, 10);
 const seenKey = () => `${state.session.user.id}:${state.session.depotId}`;
 
 function readSeen() { try { return JSON.parse(storage.getItem(KEYS.briefing)) || {}; } catch { return {}; } }
-function markSeen() {
+function markSeen(key = seenKey()) {
   const seen = readSeen();
-  seen[seenKey()] = today();
+  seen[key] = today();
   try { storage.setItem(KEYS.briefing, JSON.stringify(seen)); } catch { /* quota : sans gravité */ }
 }
 
 export function openBriefing() {
   const now = new Date();
+  const key = seenKey(); // capturée maintenant : la feuille peut se fermer après la fin de la session (verrouillage)
   const items = briefing(db(), { depotId: depot().id, role: state.session.user.role, now });
   openSheet({
     title: 'Votre journée',
@@ -29,7 +30,7 @@ export function openBriefing() {
           ${icon(t.icon, 'i--sm')}<span class="grow"><strong>${t.title}</strong>${t.text ? html`<span class="today__text">${t.text}</span>` : ''}</span>${icon('chevron', 'i--sm')}</button></li>`)}</ul>`
         : html`<div class="empty">${icon('check', 'i--xl')}<p class="empty__title">Rien d'urgent aujourd'hui</p><p>Tout est à jour dans ce dépôt.</p></div>`}`,
     foot: html`<button type="button" class="btn btn--primary btn--block" data-action="sheet.close">C'est parti</button>`,
-    onClose: markSeen,
+    onClose: () => markSeen(key),
   });
 }
 

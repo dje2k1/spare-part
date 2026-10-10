@@ -1,17 +1,22 @@
 // Fragments d'interface partagés entre les vues. Tout passe par html`` (auto-échappement).
-import { html, fmtInt, fmtRelative, fmtDateTime } from '../lib/text.js';
+import { html, fmtInt, fmtRelative, fmtDateTime, initials } from '../lib/text.js';
 import { isImageDataUrl } from '../lib/image.js';
 import { icon } from './dom.js';
+import { hueClass, sectionIcon } from './look.js';
 import { MOVES } from '../core/config.js';
 import { locCode } from '../core/queries.js';
 
-/** Vignette : photo (data-URL validée) ou monogramme. */
+/** Vignette : photo (data-URL validée) ou monogramme sur la teinte de sa famille d'articles. */
 export function thumb(article, cls = '') {
-  const inner = isImageDataUrl(article.photo)
+  const photo = isImageDataUrl(article.photo);
+  const inner = photo
     ? html`<img src="${article.photo}" alt="" loading="lazy" decoding="async">`
     : html`<span aria-hidden="true">${(article.name || '?').trim().charAt(0).toUpperCase()}</span>`;
-  return html`<span class="thumb ${cls}">${inner}</span>`;
+  return html`<span class="thumb ${photo ? '' : hueClass(article.family || article.name)} ${cls}">${inner}</span>`;
 }
+
+/** Pastille d'initiales d'une personne (teinte stable par nom). */
+export const avatar = (name, cls = '') => html`<span class="avatar ${hueClass(name)} ${cls}">${initials(name)}</span>`;
 
 const STATUS = { zero: ['pill--zero', 'Épuisé'], low: ['pill--low', 'Alerte'] };
 export const statusPill = (status) => (STATUS[status] ? html`<span class="pill ${STATUS[status][0]}">${STATUS[status][1]}</span>` : '');
@@ -55,9 +60,12 @@ export function movementRow(h, { depot = false, now = new Date() } = {}) {
     </div>`;
 }
 
-export function pageHead({ eyebrow = '', title, sub = '', actions = '' }) {
+/** En-tête de page : bandeau à la couleur de la section, pictogramme de la section (ou `icon`). */
+export function pageHead({ eyebrow = '', title, sub = '', actions = '', icon: ic = sectionIcon() }) {
   return html`
-    <div class="page-head">
+    <div class="page-head ${String(title).length > 22 ? 'page-head--long' : ''}">
+      <span class="page-head__art" aria-hidden="true">${icon(ic)}</span>
+      <span class="page-head__icon" aria-hidden="true">${icon(ic)}</span>
       <div class="grow">
         ${eyebrow ? html`<p class="eyebrow">${eyebrow}</p>` : ''}
         <h2 class="page-head__title">${title}</h2>
@@ -68,7 +76,7 @@ export function pageHead({ eyebrow = '', title, sub = '', actions = '' }) {
 }
 
 export function emptyState({ icon: ic = 'box', title, text = '', action = '' }) {
-  return html`<div class="empty">${icon(ic, 'i--xl')}<p class="empty__title">${title}</p>${text ? html`<p>${text}</p>` : ''}${action}</div>`;
+  return html`<div class="empty"><span class="empty__art" aria-hidden="true">${icon(ic, 'i--xl')}</span><p class="empty__title">${title}</p>${text ? html`<p>${text}</p>` : ''}${action}</div>`;
 }
 
 /** Tuile d'indicateur ; cliquable si `action` est fourni (data-action). */

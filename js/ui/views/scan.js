@@ -16,6 +16,7 @@ import { toast } from '../toast.js';
 import { touch } from '../session.js';
 import { replaceHash, navigate } from '../router.js';
 import { openArticle } from './article-sheet.js';
+import { setAccent, SCAN_FAMILY } from '../look.js';
 
 // « find » : consultation (la fiche de la pièce s'ouvre), depuis la barre de recherche de l'accueil.
 const MODES = { in: 'Entrée de stock', out: 'Sortie de stock', transfer: 'Transfert', find: 'Rechercher une pièce' };
@@ -67,6 +68,7 @@ function paintMode() {
     setHtml($('#scan-mode'), html`<p class="muted scan__find-hint">${icon('info', 'i--sm')} Scannez ou saisissez une pièce : sa fiche s'ouvre (stock, emplacements, historique).</p>`);
     document.querySelector('.scan')?.setAttribute('data-mode', 'find');
     $('#topbar-title').textContent = MODES.find;
+    setAccent(SCAN_FAMILY.find);
     return;
   }
   const items = [
@@ -77,6 +79,7 @@ function paintMode() {
   setHtml($('#scan-mode'), segmented({ action: 'scan.mode', value: S.mode, items, label: 'Type d\'opération' }));
   document.querySelector('.scan')?.setAttribute('data-mode', S.mode);
   $('#topbar-title').textContent = MODES[S.mode];
+  setAccent(SCAN_FAMILY[S.mode]); // barre du haut, caméra et bouton : vert (entrée), rouge (sortie), bleu (transfert)
 }
 
 function paintCamera() {

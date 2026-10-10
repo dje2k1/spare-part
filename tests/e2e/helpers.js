@@ -70,6 +70,17 @@ export async function loginDemo(page, opts = {}) {
 }
 
 export const db = (page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key)), KEYS.db);
+
+/**
+ * Pièce en stock (au moins `min`) dans le dépôt dont le nom contient `depotName`, la mieux pourvue.
+ * La démonstration est simulée jusqu'à l'instant présent : le stock d'une pièce donnée varie selon l'heure.
+ */
+export function stockedArticle(data, depotName, min = 1) {
+  const d = Object.values(data.depots).find((x) => x.name.includes(depotName));
+  const best = Object.entries(data.stocks[d.id]).filter(([ean, q]) => q >= min && data.articles[ean]).sort(([, a], [, b]) => b - a)[0];
+  if (!best) throw new Error(`aucune pièce avec au moins ${min} en stock à ${depotName}`);
+  return data.articles[best[0]];
+}
 export const toastText = (page) => page.locator('.toast__text').last();
 
 /** Navigue par hash et attend le rendu du titre. */

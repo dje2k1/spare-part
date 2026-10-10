@@ -58,6 +58,7 @@ const PRECACHE = [
   'js/ui/feedback.js',
   'js/ui/idb.js',
   'js/ui/keypad.js',
+  'js/ui/look.js',
   'js/ui/menu.js',
   'js/ui/net.js',
   'js/ui/print.js',
