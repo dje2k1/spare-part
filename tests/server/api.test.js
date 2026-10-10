@@ -3,6 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, client, openStream, ORG, opId, byName, demoDb } from './helpers.js';
 import { makeBackup } from '../../js/core/schema.js';
+import { hashPin } from '../../js/core/auth.js';
 
 let srv;
 before(async () => { srv = await startApp(); });
@@ -53,7 +54,8 @@ test('session : cookie HttpOnly SameSite=Strict, empreinte seule côté serveur,
   assert.match(set, /HttpOnly/);
   assert.match(set, /SameSite=Strict/);
   assert.doesNotMatch(set, /Secure/, 'HTTP local : pas de Secure (sinon le cookie serait ignoré)');
-  assert.equal(r.json.pin.len, 4, 'empreinte renvoyée au seul titulaire (déverrouillage hors ligne)');
+  assert.equal(r.json.pin, undefined, 'aucune empreinte renvoyée : l\'appareil fabrique son propre vérificateur hors ligne');
+  assert.doesNotMatch(r.text, /PBKDF2|"hash"|"salt"/);
   const token = c.cookie.split('=')[1];
   const { readFileSync } = await import('node:fs');
   srv.app.auth.close();
@@ -162,7 +164,7 @@ test('compte supprimé ou PIN changé par un administrateur : ses sessions sont 
   await pierre.login('Pierre Blanc', '5678');
   assert.equal((await pierre.get('/api/session')).status, 200);
   const p = byName(srv.app.store.db, 'Pierre Blanc');
-  const pin = structuredClone(byName(srv.app.store.db, 'Julie Laurent').pin);
+  const pin = await hashPin('97531');
   const r = await admin.post('/api/ops', { userId: me.user.id, ops: [{ opId: opId(3), name: 'saveUser', params: { id: p.id, name: p.name, role: p.role, depotId: p.depotId, pin }, depotId: me.depotId, at: new Date().toISOString() }] });
   assert.equal(r.json.results[0].status, 'ok');
   assert.equal((await pierre.get('/api/session')).status, 401);

@@ -1,6 +1,6 @@
 {
   "name": "mode-stock",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "description": "MODE Stock — gestion de stock de pièces détachées : PWA (autonome ou synchronisée par le serveur de l'entreprise)",
   "private": true,
   "type": "module",

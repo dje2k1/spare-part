@@ -28,6 +28,8 @@ jobs:
       - run: npm ci
       - name: Dépendances du serveur de synchronisation
         run: npm ci --prefix server
+      - name: Vulnérabilités connues des dépendances livrées en production (serveur)
+        run: npm audit --prefix server --omit=dev --audit-level=high
       - name: Tests unitaires (métier, PWA, jetons de design, règles statiques)
         run: npm run test:unit
       - name: Tests du serveur (journal, API, sécurité, temps réel, moteur de synchronisation, relais IA)

@@ -5,7 +5,7 @@ codes-barres, sorties et réceptions, commandes des ateliers au central (prépar
 écarts), commandes fournisseurs, seuils intelligents, étiquettes, inventaire guidé, briefing quotidien et rapport hebdomadaire.
 PWA mobile d'abord (iPhone et Android), utilisable hors ligne, thème clair / sombre, aucune compilation.
 
-> Version 3.2 · pensée pour les magasiniers : un accueil simple à quatre plaques d'action, les fonctions avancées dans
+> Version 3.3 · pensée pour les magasiniers : un accueil simple à quatre plaques d'action, les fonctions avancées dans
 > le menu ; fluide sur un vrai catalogue (des milliers de pièces, des centaines de commandes). Charte graphique
 > « Plaques & lignes » : la signalétique parisienne appliquée au stock ([système de design](DESIGN.md)).
 
@@ -113,23 +113,27 @@ automatiquement ; **toute mutation passe par une opération du registre** via `r
 
 ### Tests
 
-* **Unitaires** (≈ 180) : schéma et migrations, stockage transactionnel, PIN et verrouillage, chaque opération métier
-  (limites, rôles, cloisonnement, commandes, reliquats, achats), enregistreur de deltas (retour arrière, application à une
-  copie), seuils intelligents et prévisions, indicateurs, étiquettes, CSV, EAN-13 et codes équivalents, QR, IA, contrastes
-  WCAG, cohérence PWA (empreinte du cache), règles statiques (syntaxe de tous les modules, imports inutiles, `innerHTML`,
-  gestionnaires en ligne, ARIA) et **montée en charge** (3 000 pièces, 1 200 commandes : chaque écran sous budget).
-* **Serveur** (≈ 47, contre le vrai serveur) : journal (doublons, refus sans effet, identité imposée, reprise après arrêt
+* **Unitaires** (≈ 195) : schéma et migrations, stockage transactionnel, PIN (politique par rôle, coût de l'empreinte) et
+  verrouillage, chaque opération métier (limites, rôles, cloisonnement, commandes, reliquats, achats), enregistreur de
+  deltas (retour arrière, application à une copie), seuils intelligents et prévisions, indicateurs, étiquettes, CSV,
+  EAN-13 et codes équivalents, QR, IA, contrastes WCAG, cohérence PWA (empreinte du cache), règles statiques (syntaxe
+  de tous les modules, imports inutiles, `innerHTML`, gestionnaires en ligne, ARIA), **montée en charge** (3 000 pièces,
+  1 200 commandes : chaque écran sous budget), bibliothèques embarquées identiques aux paquets npm, durcissement du
+  déploiement (Compose, Caddy, image).
+* **Serveur** (≈ 60, contre le vrai serveur) : journal (doublons, refus sans effet, identité imposée, reprise après arrêt
   brutal et ligne tronquée, journal corrompu refusé, archivage), API (code d'accès, verrouillage, cookie `HttpOnly`, CSRF,
   jetons forgés, cookie mal encodé, révocation, purge des sessions, sauvegarde/restauration, sauvegardes quotidiennes,
   fichiers non servis, compression, en-têtes), temps réel (SSE, `Last-Event-ID`),
   **moteur de synchronisation** (deux appareils, hors ligne avec redémarrage, conflit entre sites, réponse perdue,
-  session expirée, divergence détectée et corrigée), relais IA (API Anthropic simulée, quota, erreurs).
+  session expirée, divergence détectée et corrigée), relais IA (API Anthropic simulée, quota, erreurs), **sécurité**
+  (adresse derrière le proxy, opérations réservées au serveur, changement de PIN, journal d'audit filtré et archivé,
+  limites de ressources, configuration refusée au démarrage — chaque test vérifié en réintroduisant la faille).
 * **E2E** (≈ 90, Chromium mobile 390 px) : tous les écrans et parcours, douchette (y compris dans un champ), comptage
   d'inventaire au scan, historique de session, sécurité, hors-ligne, mise à jour du service
   worker, accessibilité axe-core (WCAG 2.1 A/AA, clair et sombre) ; **mode serveur** avec un vrai serveur par test :
   appareil neuf, temps réel entre deux navigateurs, saisie hors ligne puis envoi, application rouverte sans réseau,
-  conflit signalé, compte supprimé, analyse photo relayée. Tout test échoue sur une erreur JS, une violation de CSP ou une
-  réponse HTTP ≥ 400 inattendue.
+  conflit signalé, compte supprimé, changement de PIN vérifié par le serveur, analyse photo relayée. Tout test échoue
+  sur une erreur JS, une violation de CSP ou une réponse HTTP ≥ 400 inattendue.
 
 ## Données et sauvegarde
 
@@ -150,14 +154,20 @@ Partout : CSP `script-src 'self'` (aucun script en ligne, aucun `eval`, aucune r
 PIN hachés PBKDF2-SHA256 salés, verrouillage progressif (30 s → 15 min), verrouillage après inactivité, permissions
 vérifiées dans le métier, opérations transactionnelles, validation de toutes les entrées (CSV, sauvegardes, IA, images).
 
-En **mode serveur** en plus : code d'accès de l'entreprise, PIN vérifiés par le serveur avec limitation par compte et par
-adresse, session en cookie `HttpOnly` / `SameSite=Strict` / `Secure` (empreinte seule côté serveur), protection CSRF,
-chaque opération réexécutée par le serveur avec l'identité de la session, aucune empreinte de PIN des autres comptes sur
-les appareils, journal serveur non modifiable depuis un appareil, clé Anthropic uniquement sur le serveur. Détails et
-limites : [guide de déploiement §8](docs/DEPLOIEMENT.md#8-sécurité).
+En **mode serveur** en plus : code d'accès de l'entreprise (8 caractères minimum), PIN vérifiés par le serveur avec
+verrouillage par compte (journalisé) et limitation par adresse, PIN de 6 chiffres pour les administrateurs, changement de
+PIN vérifié par le serveur, session en cookie `HttpOnly` / `SameSite=Strict` / `Secure` (empreinte seule côté serveur),
+protection CSRF, chaque opération réexécutée par le serveur avec l'identité de la session, **aucune empreinte de PIN
+envoyée aux appareils** (vérificateur hors ligne fabriqué sur l'appareil, 12 h, effacé à la déconnexion), journal d'audit
+réservé aux responsables et administrateurs, jamais tronqué ni falsifiable depuis un appareil, ressources bornées (flux,
+calculs, débit d'opérations, sessions), conteneur en lecture seule sans privilège, clé Anthropic uniquement sur le
+serveur. Audit de sécurité, correctifs et risques résiduels : [AUDIT.md, passe 5](docs/AUDIT.md#passe-5--audit-de-sécurité-version-33) ;
+exploitation : [guide de déploiement §8](docs/DEPLOIEMENT.md#8-sécurité).
 
 **Limites du mode autonome** : un PIN court reste devinable hors ligne par qui lit le stockage de l'appareil, la base et
 le journal sont modifiables avec les outils du navigateur, et chaque appareil a sa propre base (pas de synchronisation).
+Sur GitHub Pages, tous les sites d'un même compte partagent l'origine `<compte>.github.io` (donc le stockage) : pour de
+vraies données, préférez le mode serveur ou un domaine dédié.
 
 ### Analyse de photo (IA)
 
@@ -179,6 +189,11 @@ codes-barres proposés par le modèle sont ignorés (codes internes attribués).
 
 ## Historique
 
+Version 3.3 : audit de sécurité complet ([constats, correctifs et risques résiduels](docs/AUDIT.md#passe-5--audit-de-sécurité-version-33)) —
+adresse réelle derrière le proxy (limitation des essais incontournable), code d'accès de 8 caractères minimum, changement
+de PIN vérifié par le serveur, plus aucune empreinte de PIN envoyée aux appareils, journal d'audit réservé et archivé au
+lieu d'être tronqué, verrouillages journalisés, ressources du serveur bornées, PIN de 6 chiffres pour les administrateurs,
+conteneurs durcis, bibliothèques embarquées vérifiées octet pour octet ; chaque correctif a son test.
 Version 3.2 : nouvelle charte graphique « Plaques & lignes » ([système de design](DESIGN.md)) — police unique
 Archivo variable (étroite pour la signalétique), émaux par section aux contrastes vérifiés par les tests, plaques et
 lignes de métro (ligne des commandes en cours sur l'accueil, trajets des transferts, historiques à stations), icônes

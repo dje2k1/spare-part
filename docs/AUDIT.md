@@ -140,3 +140,75 @@ Un test de montée en charge (`tests/unit/scale.test.js`) échoue si ces parcour
 * ✅ Six fonctions exportées jamais utilisées supprimées ; deux tests dépendants de l'heure de la démonstration stabilisés.
 * ⚠️ Non vérifié sur matériel réel : douchettes Bluetooth (seuil de rafale choisi pour 5 à 80 ms entre caractères),
   imprimantes thermiques, rendu sur iPhone et Android.
+
+## Passe 5 — audit de sécurité (version 3.3)
+
+Périmètre : application (PWA, modes autonome et serveur), serveur de synchronisation, déploiement (Docker, Caddy),
+chaîne d'approvisionnement (dépendances, bibliothèques embarquées, CI). Menaces considérées : personne sur Internet sans le
+code d'accès ; personne qui connaît le code d'accès (ancien salarié, fuite) ; salarié connecté qui cherche à dépasser son
+rôle ou à effacer ses traces ; vol ou copie d'un appareil ; compromission d'un composant voisin (proxy, conteneur).
+Chaque correctif a son test ; les tests de sécurité du serveur ont été vérifiés **par mutation** (la faille réintroduite,
+le test échoue). Le déploiement durci a été monté pour de vrai (image Docker, Caddy, HTTPS) et vérifié de bout en bout.
+
+### Constats et correctifs
+
+| # | Constat | Gravité | Correctif | Test |
+|---|---|---|---|---|
+| A1 | Derrière le proxy (`TRUST_PROXY=1`), l'adresse du client était lue à **gauche** de `X-Forwarded-For`, valeur fournie par le client : en la changeant à chaque essai, on contournait la limitation des échecs par adresse — essais illimités du code d'accès | Élevée | valeur posée par le proxy (la plus à droite), idem `X-Forwarded-Proto` / `-Host` | `security.test.js` (proxy) ; vérifié derrière un vrai Caddy |
+| A2 | `ORG_CODE` de 4 caractères accepté (simple avertissement) : avec A1, devinable | Élevée | refus de démarrer sous 8 caractères (hors démonstration) | `security.test.js` (createApp et lancement réel de `server/index.js`) |
+| A3 | Un appareil pouvait envoyer des traces de connexion (`recordAuth`) en boucle ; au-delà de 100 000 entrées, le journal d'audit était **tronqué** : un salarié pouvait noyer puis faire disparaître la trace de ses actions | Moyenne | traces émises par le serveur seul ; excédent de l'audit **archivé** (`archive-audit.jsonl`), jamais effacé | `security.test.js` (opérations réservées, archive) |
+| A4 | Changement de son PIN en mode serveur : le PIN actuel n'était vérifié que par l'appareil (une session laissée ouverte suffisait à s'approprier le compte), l'empreinte calculée par l'appareil était acceptée même affaiblie (10 000 itérations), la politique de PIN n'était pas appliquée par le serveur | Moyenne | `POST /api/pin` : PIN actuel vérifié par le serveur (verrouillage et limite par adresse communs avec la connexion), politique appliquée, empreinte calculée par le serveur, autres sessions du compte fermées ; `changeOwnPin` refusé depuis un appareil ; toute nouvelle empreinte doit être au coût courant (`isStrongPinRecord`) | `security.test.js` (2 tests), `ops.test.js`, `auth.test.js`, `sync.spec.js` |
+| A5 | La connexion renvoyait l'**empreinte du PIN** du serveur ; l'appareil la gardait 30 jours, même après déconnexion : une tablette partagée accumulait les empreintes de tous ceux qui s'y étaient connectés, devinables hors ligne en quelques minutes | Moyenne | plus aucune empreinte ne quitte le serveur : l'appareil fabrique son propre vérificateur à partir du PIN saisi, valable 12 h, **effacé du stockage** à expiration et à la déconnexion volontaire | `api.test.js`, `security.test.js`, `sync.spec.js` |
+| A6 | Journal d'audit (heures de connexion de chacun, modifications de comptes) répliqué sur les appareils de **tous** les rôles | Moyenne | transmis aux seuls rôles autorisés (`audit.view`) : instantané, rattrapage, temps réel, réponse aux envois | `security.test.js` |
+| A7 | Ressources non bornées : flux temps réel par session, calculs PBKDF2 simultanés (processeur), opérations par minute (chaque opération est écrite et synchronisée sur disque), sessions par compte (mémoire, `sessions.json`) | Moyenne | 6 flux par session et 2 000 au total ; 8 calculs PBKDF2 simultanés (au-delà : 503, sans compter d'échec) ; 1 200 opérations par minute et par compte (l'appareil réessaie seul) ; 20 sessions par compte (la plus ancienne fermée) | `security.test.js` (4 tests) |
+| A8 | Verrouillage d'un compte après des PIN erronés invisible des administrateurs | Faible | entrée d'audit au 5ᵉ échec puis tous les 10, journal du serveur avec l'adresse | `security.test.js`, `ops.test.js` |
+| A9 | PIN d'administrateur de 4 chiffres possible (accès à tout : comptes, sauvegardes avec empreintes, tous les dépôts) | Faible | 6 chiffres au moins pour tout PIN d'administrateur créé, changé ou promu (interface, métier, serveur, installation) ; un PIN existant plus court reste valable jusqu'à son changement | `auth.test.js`, `ops.test.js`, `security.test.js`, `admin.spec.js` |
+| A10 | `BOOTSTRAP_ADMIN_PIN` (en clair) laissé dans `.env` après l'installation sans que rien ne le signale | Faible | avertissement à chaque démarrage, consigne dans `.env.example` et le guide | `security.test.js` (lancement réel) |
+| A11 | Caddy recevait tout `.env` (clé Anthropic, code d'accès, PIN initial) alors qu'il n'a besoin que du domaine | Faible | `DOMAIN` seul | `deploy.test.js` ; vérifié dans le conteneur |
+| A12 | Conteneur de l'application avec les capacités noyau par défaut et un système de fichiers inscriptible | Faible | lecture seule (hors volume `/data`), `cap_drop: ALL`, `no-new-privileges` (Caddy aussi) | `deploy.test.js` ; vérifié (écriture refusée hors `/data`, santé OK) |
+| A13 | En-têtes `Server: Caddy` et `Via: 1.1 Caddy` | Info | retirés | `deploy.test.js` ; vérifié |
+| A14 | `.env.local`, `.env.production`… pas ignorés par git | Info | `.env.*` ignoré (sauf `.env.example`), dans l'image aussi | — |
+| A15 | Aucune alerte sur les vulnérabilités connues des dépendances | Info | `npm audit` (dépendances de production du serveur, niveau élevé) en CI | CI |
+| A16 | Bibliothèques embarquées (lecteur de codes, QR, police) : les empreintes SHA-256 étaient publiées mais **jamais vérifiées**, contrairement à ce qu'annonçait `scripts/vendor.js` — un fichier minifié de 375 Ko modifié en douce serait passé inaperçu | Faible | test : empreintes, tailles, et identité octet pour octet avec les paquets npm installés (intégrité garantie par `package-lock.json`) | `vendor.test.js` (vérifié par mutation) |
+
+### Contrôlé, sans constat
+
+* **Injection (XSS)** : gabarits auto-échappants, `esc()` couvre `` & < > " ' ` ``, `raw()` réservé aux constructeurs
+  validés (QR, EAN), règles statiques (attributs entre guillemets, aucun style ou gestionnaire en ligne) ; CSP
+  `script-src 'self'` sans `unsafe-inline` ni `eval`, identique en `<meta>` et en en-tête serveur.
+* **Fichiers entrants** : CSV (cellules neutralisées contre l'injection de formules à l'export), sauvegardes (identifiants,
+  bornes, clés `__proto__` refusées), images (JPEG/PNG/WebP en `data:` seulement, taille bornée), réponses de l'IA nettoyées.
+* **Serveur** : sessions (256 bits, empreinte seule sur disque, révocation), CSRF (JSON + `Origin` + `Sec-Fetch-Site`),
+  droits vérifiés par le métier avec l'identité de la session pour chaque opération, fichiers servis sur liste blanche
+  (aucun fichier caché, traversée de chemins testée), nom des sauvegardes contrôlé, relais IA (modèle fixe, quota par
+  compte, type et taille d'image contrôlés), en-têtes de sécurité, délais de requête.
+* **Service worker** : l'API n'est jamais mise en cache ; activation d'une nouvelle version seulement à la demande.
+* **Chaîne d'approvisionnement** : `npm audit` sans vulnérabilité (application et serveur) ; aucune ressource tierce
+  chargée par l'application (bibliothèques et police servies depuis le dépôt) ; CI en lecture seule (`contents: read`), déclenchée par
+  `pull_request` (jamais `pull_request_target`), sans secret ; image Docker : utilisateur `node`, dépendances de production
+  seules, fichiers copiés un par un (ni `.env`, ni `.git`, ni tests).
+
+### Risques résiduels assumés
+
+* **Vérificateur hors ligne** : pour travailler sans réseau, l'appareil garde de quoi vérifier le PIN des comptes connectés
+  depuis moins de 12 h. Qui copie le stockage d'un appareil déverrouillé le devine hors ligne : quelques minutes pour
+  4 chiffres sur un ordinateur portable, quelques heures (minutes sur carte graphique) pour 6. Atténué par la durée courte,
+  l'effacement à la déconnexion et le PIN de 6 chiffres des administrateurs. Seul remède complet : renoncer à la connexion
+  hors ligne, ou des secrets plus longs (mot de passe) — un choix d'usage.
+* **Essais en ligne avec le code d'accès** : le verrouillage limite chaque compte à une centaine d'essais par jour ; un
+  attaquant qui connaît le code d'accès et dispose de nombreuses adresses IP peut espérer trouver le PIN de 4 chiffres d'un
+  compte opérateur parmi une centaine en un jour environ (un administrateur, à 6 chiffres : plus de dix ans). Parades :
+  changer `ORG_CODE` à chaque départ, surveiller les « Compte verrouillé » du journal d'audit ; des PIN de 6 chiffres pour
+  tous si le code a pu fuiter. Revers du verrouillage : quelqu'un qui connaît le code peut bloquer un compte 15 minutes.
+* **Mode autonome** (GitHub Pages) : toute la base, y compris les empreintes de PIN de tous les comptes et la clé
+  Anthropic éventuelle, est dans le navigateur. De plus, **tous les sites GitHub Pages d'un même compte partagent la même
+  origine** (`<compte>.github.io`) : un autre projet publié sous ce compte pourrait lire ce stockage. Pour de vraies
+  données : le mode serveur, ou au minimum un domaine dédié à l'application.
+* **Démonstration** : `DEMO=1` affiche les comptes et leurs PIN à la connexion (signalé au démarrage) ; jamais avec de
+  vraies données sur un serveur joignable d'Internet.
+* **Données partagées** : chaque compte reçoit le stock de tous les dépôts et l'historique des mouvements (transferts,
+  stock central) — choix fonctionnel ; seul le journal d'audit est réservé.
+* **Versions suivies** : images `node:22-alpine` et `caddy:2`, actions de CI `@v4`, référencées par version majeure (non
+  figées par empreinte) pour recevoir les correctifs ; reconstruire l'image régulièrement. Impact limité pour la CI (lecture
+  seule, aucun secret).
+* **Disponibilité** : un serveur unique ; s'il tombe, les sites continuent hors ligne et se resynchronisent ensuite.

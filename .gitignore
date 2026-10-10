@@ -6,3 +6,5 @@ playwright-report/
 server/data/
 server/data-*/
 .env
+.env.*
+!.env.example

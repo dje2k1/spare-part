@@ -141,7 +141,7 @@ function setup() {
       <label class="field"><span class="field__label">Nom du dépôt</span><input class="input" name="depot" required maxlength="60" placeholder="Atelier Paris" autocomplete="off" data-autofocus></label>
       <label class="field"><span class="field__label">Code (facultatif)</span><input class="input" name="code" maxlength="10" placeholder="DEP-01" autocomplete="off" autocapitalize="characters"></label>
       <label class="field"><span class="field__label">Administrateur</span><input class="input" name="admin" required maxlength="60" placeholder="Prénom Nom" autocomplete="off"></label>
-      <label class="field"><span class="field__label">PIN (4 à 8 chiffres)</span><input class="input input--mono" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
+      <label class="field"><span class="field__label">PIN de l'administrateur (6 à 8 chiffres)</span><input class="input input--mono" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
       <label class="field"><span class="field__label">Confirmer le PIN</span><input class="input input--mono" name="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
       <p class="field__error" data-err role="alert"></p>
       <button type="submit" class="btn btn--primary btn--block">Créer et continuer</button>
@@ -320,7 +320,7 @@ export function initLogin() {
       const fail = (m) => { err.textContent = m; };
       const depotName = val(form, 'depot'), adminName = val(form, 'admin'), pin = val(form, 'pin');
       if (!depotName || !adminName) return fail('Renseignez le nom du dépôt et de l\'administrateur.');
-      const policy = pinPolicy(pin);
+      const policy = pinPolicy(pin, { role: 'admin' });
       if (!policy.ok) return fail(policy.reason);
       if (pin !== val(form, 'pin2')) return fail('Les deux PIN ne correspondent pas.');
       form.querySelector('[type=submit]').disabled = true;

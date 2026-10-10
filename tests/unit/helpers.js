@@ -19,7 +19,7 @@ export function memoryStorage({ limit = Infinity } = {}) {
   };
 }
 
-export const FAKE_PIN = { alg: 'PBKDF2-SHA256', salt: 'AAAAAAAAAAAAAAAAAAAAAA==', hash: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', iter: 10000, len: 4 };
+export const FAKE_PIN = { alg: 'PBKDF2-SHA256', salt: 'AAAAAAAAAAAAAAAAAAAAAA==', hash: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', iter: 150000, len: 4 };
 
 export const IDS = {
   paris: 'depotparis01', lyon: 'depotlyon001',

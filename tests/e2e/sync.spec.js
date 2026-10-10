@@ -79,7 +79,7 @@ const restoreServer = (srv) => new Promise((resolve) => srv.app.server.listen(Nu
 const articleNamed = (srv, prefix) => Object.values(srv.app.store.db.articles).find((a) => a.name.startsWith(prefix));
 
 test.describe('mode serveur', () => {
-  test.use({ expectedHttpErrors: [/\/api\/(directory|login)$/] }); // code d'accès et PIN faux : refus volontaires
+  test.use({ expectedHttpErrors: [/\/api\/(directory|login|pin)$/] }); // code d'accès et PIN faux : refus volontaires
 
   test('appareil neuf : code d\'accès, PIN vérifié par le serveur, saisie enregistrée sur le serveur', async ({ page, srv }) => {
     await page.goto(`${srv.base}/`);
@@ -102,6 +102,13 @@ test.describe('mode serveur', () => {
     // aucune empreinte de PIN d'un autre compte sur l'appareil
     const stored = await page.evaluate(() => JSON.stringify(localStorage));
     expect(stored.match(/PBKDF2/g)?.length ?? 0).toBe(1); // la sienne seulement (déverrouillage hors ligne)
+    // …et ce n'est pas celle du serveur : l'appareil fabrique son propre vérificateur à partir du PIN saisi
+    const sophie = Object.values(srv.app.store.db.users).find((u) => u.name === 'Sophie Martin');
+    const known = () => page.evaluate(() => JSON.parse(localStorage.getItem('mode_known_users') ?? '{}'));
+    const verifier = (await known())[sophie.id].pin;
+    expect(verifier.iter).toBeGreaterThanOrEqual(150_000);
+    expect(verifier.salt).not.toBe(sophie.pin.salt);
+    expect(verifier.hash).not.toBe(sophie.pin.hash);
     const art = stockedArticle(srv.app.store.db, 'Paris', 2);
     const was = serverStock(srv, 'DEP-01', art.ean);
     await page.locator('.sheet__close, [data-action="sheet.close"]').first().click({ timeout: 1000 }).catch(() => {});
@@ -110,6 +117,39 @@ test.describe('mode serveur', () => {
     await expect.poll(() => serverStock(srv, 'DEP-01', art.ean)).toBe(was - 2);
     await expect(page.locator('#sync-btn')).toHaveAttribute('data-state', 'ok');
     expect(srv.app.store.db.history[0]).toMatchObject({ ean: art.ean, type: 'out', operator: 'Sophie Martin' });
+    // déconnexion volontaire : le vérificateur hors ligne de ce compte est effacé de l'appareil
+    await page.locator('[data-action="menu.open"]').first().click();
+    await page.locator('[data-action="menu.logout"]').click();
+    await page.locator('#modal [data-r="yes"]').click();
+    await expect(page.locator('#login')).toBeVisible();
+    expect((await known())[sophie.id]).toBeUndefined();
+  });
+
+  test('changer son PIN : vérifié par le serveur, nouvelle empreinte calculée par le serveur', async ({ page, srv }) => {
+    await connect(page, srv, JULIE);
+    const julie = () => Object.values(srv.app.store.db.users).find((u) => u.name === 'Julie Laurent');
+    const before = julie().pin;
+    const pinSheet = async (old, next) => {
+      await page.locator('[data-action="menu.open"]').first().click();
+      await page.locator('[data-action="menu.pin"]').click();
+      await page.locator('#sheet [name=old]').fill(old);
+      await page.locator('#sheet [name=new]').fill(next);
+      await page.locator('#sheet [name=new2]').fill(next);
+      await page.locator('#sheet').getByRole('button', { name: 'Enregistrer' }).click();
+    };
+    await pinSheet('0000', '80517');
+    await expect(page.locator('#sheet [data-err]')).toContainText('PIN actuel incorrect');
+    expect(julie().pin).toEqual(before);
+    await page.locator('#sheet [data-action="sheet.close"]').first().click();
+    await pinSheet('4567', '80517');
+    await expect(toastText(page)).toContainText('PIN modifié');
+    expect(julie().pin.iter).toBeGreaterThanOrEqual(150_000); // calculée par le serveur, au coût courant
+    expect(julie().pin.len).toBe(5);
+    expect(srv.app.store.db.audit[0].action).toBe('PIN modifié : Julie Laurent');
+    // le vérificateur hors ligne de l'appareil suit le nouveau PIN
+    const verifier = await page.evaluate((id) => JSON.parse(localStorage.getItem('mode_known_users'))[id].pin, julie().id);
+    expect(verifier.len).toBe(5);
+    expect(verifier.salt).not.toBe(julie().pin.salt);
   });
 
   test('temps réel : la commande d\'un atelier apparaît à l\'entrepôt sans recharger', async ({ browser, srv }) => {

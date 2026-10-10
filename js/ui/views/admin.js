@@ -64,7 +64,7 @@ function userSheet(id) {
       <label class="field"><span class="field__label">Nom complet</span><input class="input" name="name" maxlength="60" value="${u?.name ?? ''}" required autocomplete="off"></label>
       <label class="field"><span class="field__label">Rôle</span><select class="select" name="role">${Object.entries(ROLES).map(([k, r]) => html`<option value="${k}" ${u?.role === k ? 'selected' : ''}>${r.label} — ${r.hint}</option>`)}</select></label>
       <label class="field"><span class="field__label">Dépôt</span><select class="select" name="depot">${Object.values(db().depots).map((d) => html`<option value="${d.id}" ${u?.depotId === d.id ? 'selected' : ''}>${d.name}</option>`)}</select></label>
-      <label class="field"><span class="field__label">${u ? 'Nouveau PIN (laisser vide pour conserver)' : 'PIN (4 à 8 chiffres)'}</span><input class="input input--mono" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" ${u ? '' : 'required'}></label>
+      <label class="field"><span class="field__label">${u ? 'Nouveau PIN (laisser vide pour conserver)' : 'PIN (4 à 8 chiffres, 6 pour un administrateur)'}</span><input class="input input--mono" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" ${u ? '' : 'required'}></label>
       <p class="field__error" data-err role="alert"></p>
       <button type="submit" class="btn btn--primary btn--block">Enregistrer</button>
       ${u && u.id !== state.session.user.id ? html`<button type="button" class="btn btn--danger btn--block" data-action="adm.user.delete" data-id="${u.id}">${icon('trash')}Supprimer le compte</button>` : ''}</form>`,
@@ -247,7 +247,7 @@ export function initAdmin() {
       const pinText = val(form, 'pin');
       try {
         let pin = null;
-        if (pinText || !id) { const pol = pinPolicy(pinText); if (!pol.ok) { form.querySelector('[data-err]').textContent = pol.reason; return; } pin = await hashPin(pinText); }
+        if (pinText || !id) { const pol = pinPolicy(pinText, { role: val(form, 'role') }); if (!pol.ok) { form.querySelector('[data-err]').textContent = pol.reason; return; } pin = await hashPin(pinText); }
         run(saveUser, { id, name: val(form, 'name'), role: val(form, 'role'), depotId: val(form, 'depot'), pin });
         await closeSheet(); toast('Utilisateur enregistré.', { tone: 'ok' }); refresh();
       } catch (e) { if (!formErr(form, e)) throw e; }
@@ -367,7 +367,7 @@ export function initAdmin() {
           <label class="field"><span class="field__label">Nom du dépôt</span><input class="input" name="depot" maxlength="60" required></label>
           <label class="field"><span class="field__label">Code (facultatif)</span><input class="input" name="code" maxlength="10"></label>
           <label class="field"><span class="field__label">Administrateur</span><input class="input" name="admin" maxlength="60" value="${state.session.user.name === 'Administrateur' ? '' : state.session.user.name}" required></label>
-          <label class="field"><span class="field__label">PIN (4 à 8 chiffres)</span><input class="input input--mono" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
+          <label class="field"><span class="field__label">PIN de l'administrateur (6 à 8 chiffres)</span><input class="input input--mono" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
           <label class="field"><span class="field__label">Confirmer le PIN</span><input class="input input--mono" name="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
           <p class="field__error" data-err role="alert"></p>
           <button type="submit" class="btn btn--danger btn--block">Effacer la démo et démarrer</button></form>`,
@@ -377,7 +377,7 @@ export function initAdmin() {
       const err = form.querySelector('[data-err]');
       const pin = val(form, 'pin');
       if (!val(form, 'depot') || !val(form, 'admin')) { err.textContent = 'Renseignez le dépôt et l\'administrateur.'; return; }
-      const pol = pinPolicy(pin);
+      const pol = pinPolicy(pin, { role: 'admin' });
       if (!pol.ok) { err.textContent = pol.reason; return; }
       if (pin !== val(form, 'pin2')) { err.textContent = 'Les deux PIN ne correspondent pas.'; return; }
       if (!(await confirmDialog({ title: 'Effacer les données de démonstration ?', message: 'Cette action est définitive.', confirmLabel: 'Effacer', danger: true }))) return;

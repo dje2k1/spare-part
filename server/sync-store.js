@@ -23,6 +23,7 @@ export function createSyncStore({ dataDir, now = () => new Date(), snapshotEvery
   mkdirSync(dataDir, { recursive: true });
   const files = {
     snapshot: join(dataDir, 'snapshot.json'), events: join(dataDir, 'events.jsonl'), archive: join(dataDir, 'archive-history.jsonl'),
+    archiveAudit: join(dataDir, 'archive-audit.jsonl'),
     archiveOrders: join(dataDir, 'archive-orders.jsonl'), archiveTransfers: join(dataDir, 'archive-transfers.jsonl'),
   };
   let db = null;
@@ -68,13 +69,19 @@ export function createSyncStore({ dataDir, now = () => new Date(), snapshotEvery
     sinceSnapshot = 0;
   }
 
-  /** Élagage serveur des journaux (hors opérations, non diffusé) : l'excédent part en archive. */
+  /**
+   * Élagage serveur des journaux (hors opérations, non diffusé) : l'excédent part en archive — y compris l'audit,
+   * pour qu'aucune trace ne puisse être effacée en noyant le journal sous des entrées récentes.
+   */
   function trimLogs() {
     if (db.history.length > historyMax) {
       const removed = db.history.splice(historyMax);
       appendFileSync(files.archive, removed.map((h) => JSON.stringify(h)).join('\n') + '\n');
     }
-    if (db.audit.length > auditMax) db.audit.length = auditMax;
+    if (db.audit.length > auditMax) {
+      const removed = db.audit.splice(auditMax);
+      appendFileSync(files.archiveAudit, removed.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    }
   }
 
   function load() {

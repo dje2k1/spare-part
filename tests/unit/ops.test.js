@@ -337,11 +337,51 @@ test('utilisateurs : unicité, dernier administrateur, auto-suppression, PIN obl
   assert.deepEqual([db.users[u.id].role, db.users[u.id].pin.alg], ['manager', 'PBKDF2-SHA256'], 'PIN conservé');
   expectOpError(() => ops.saveUser(db, admin, { id: IDS.admin, name: 'Administrateur', role: 'manager', depotId: IDS.paris }), /au moins un administrateur/);
   expectOpError(() => ops.deleteUser(db, admin, IDS.admin), /propre compte/);
-  const other = ops.saveUser(db, admin, { name: 'Admin 2', role: 'admin', depotId: IDS.paris, pin: FAKE_PIN });
+  const other = ops.saveUser(db, admin, { name: 'Admin 2', role: 'admin', depotId: IDS.paris, pin: { ...FAKE_PIN, len: 6 } });
   assert.doesNotThrow(() => ops.deleteUser(db, ctxFor(db, 'admin'), other.id));
   delete db.users[IDS.admin];
   db.users[other.id] = other;
   expectOpError(() => ops.deleteUser(db, { ...admin, user: { ...admin.user, id: 'zz' } }, other.id), /au moins un administrateur/);
+});
+
+test('PIN : empreinte au coût courant exigée, 6 chiffres pour un administrateur (création, promotion, changement)', () => {
+  const db = smallDb();
+  const admin = ctxFor(db, 'admin');
+  const base = { name: 'Nouveau', role: 'operator', depotId: IDS.paris };
+  // Empreinte affaiblie (moins d'itérations) ou longueur incohérente : refusée, même envoyée par un administrateur
+  for (const pin of [{ ...FAKE_PIN, iter: 10_000 }, { ...FAKE_PIN, iter: 149_999 }, { ...FAKE_PIN, len: 3 }, { ...FAKE_PIN, len: 9 }, { ...FAKE_PIN, len: undefined }]) {
+    expectOpError(() => ops.saveUser(db, admin, { ...base, pin }), /PIN invalide/);
+    expectOpError(() => ops.changeOwnPin(db, ctxFor(db, 'opParis'), { pin }), /PIN invalide/);
+  }
+  // Administrateur : 6 chiffres au moins
+  expectOpError(() => ops.saveUser(db, admin, { ...base, role: 'admin', pin: FAKE_PIN }), /6 chiffres ou plus/);
+  const a2 = ops.saveUser(db, admin, { ...base, role: 'admin', pin: { ...FAKE_PIN, len: 6 } });
+  assert.equal(db.users[a2.id].role, 'admin');
+  // Promotion d'un compte au PIN court : nouveau PIN exigé ; avec un PIN de 6 chiffres déjà en place, acceptée
+  expectOpError(() => ops.saveUser(db, admin, { id: IDS.opParis, name: 'Julie Laurent', role: 'admin', depotId: IDS.paris, pin: null }), /saisissez un nouveau PIN de 6 chiffres/);
+  assert.equal(db.users[IDS.opParis].role, 'operator', 'refus : base intacte');
+  ops.saveUser(db, admin, { id: IDS.opParis, name: 'Julie Laurent', role: 'admin', depotId: IDS.paris, pin: { ...FAKE_PIN, len: 7 } });
+  assert.equal(db.users[IDS.opParis].role, 'admin');
+  // Un administrateur existant au PIN court (données antérieures) reste modifiable sans changer de PIN…
+  assert.doesNotThrow(() => ops.saveUser(db, admin, { id: IDS.admin, name: 'Administrateur', role: 'admin', depotId: IDS.lyon, pin: null }));
+  // …mais ne peut pas se choisir un nouveau PIN court
+  expectOpError(() => ops.changeOwnPin(db, admin, { pin: FAKE_PIN }), /6 chiffres ou plus/);
+  assert.doesNotThrow(() => ops.changeOwnPin(db, admin, { pin: { ...FAKE_PIN, len: 6 } }));
+  assert.doesNotThrow(() => ops.changeOwnPin(db, ctxFor(db, 'mgrParis'), { pin: FAKE_PIN }), '4 chiffres : suffisant hors administrateur');
+});
+
+test('trace de verrouillage : nombre d\'échecs borné, aucun texte libre', () => {
+  const db = smallDb();
+  ops.recordAuth(db, ctxFor(db, 'opParis'), { kind: 'lockout', failures: 5 });
+  assert.equal(db.audit[0].action, 'Compte verrouillé après 5 PIN erronés : Julie Laurent');
+  assert.equal(db.audit[0].type, 'login');
+  assert.equal(db.audit[0].meta.failures, 5);
+  ops.recordAuth(db, ctxFor(db, 'opParis'), { kind: 'lockout', failures: '<img src=x onerror=alert(1)>' });
+  assert.equal(db.audit[0].action, 'Compte verrouillé après 0 PIN erronés : Julie Laurent');
+  ops.recordAuth(db, ctxFor(db, 'opParis'), { kind: 'lockout', failures: 10 ** 9 });
+  assert.match(db.audit[0].action, /après 1000 PIN/);
+  ops.recordAuth(db, ctxFor(db, 'opParis'), { kind: 'autre chose' });
+  assert.equal(db.audit[0].action, 'Connexion de Julie Laurent', 'type inconnu : connexion');
 });
 
 test('changer son PIN retire l\'aide de démo correspondante', () => {

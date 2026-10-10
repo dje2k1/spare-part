@@ -105,6 +105,10 @@ test.describe('administration', () => {
     await page.locator('#sheet [name=pin]').fill('8264');
     await page.locator('#sheet [name=pin2]').fill('8264');
     await page.getByRole('button', { name: 'Effacer la démo et démarrer' }).click();
+    await expect(page.locator('#sheet [data-err]')).toContainText('administrateur doit choisir un PIN de 6 chiffres'); // accès à tout : PIN plus long
+    await page.locator('#sheet [name=pin]').fill('826419');
+    await page.locator('#sheet [name=pin2]').fill('826419');
+    await page.getByRole('button', { name: 'Effacer la démo et démarrer' }).click();
     await page.getByRole('button', { name: 'Effacer', exact: true }).click();
     await expect(page.locator('#login')).toBeVisible();
     const fresh = await db(page);
@@ -112,7 +116,7 @@ test.describe('administration', () => {
     expect(fresh.meta.demo).toBeFalsy();
     expect(fresh.meta.demoPins).toBeUndefined();
     expect(JSON.stringify(fresh)).not.toContain('"1234"');
-    await login(page, { name: 'Camille', pin: '8264' });
+    await login(page, { name: 'Camille', pin: '826419' });
     await expect(page.locator('#view')).toBeVisible();
   });
 
