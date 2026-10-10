@@ -1,0 +1,28 @@
+/* Impression : étiquettes (codes-barres, QR) et états de stock. Seul #print-root est imprimé. */
+@page { margin: 10mm; }
+
+body > *:not(#print-root) { display: none !important; }
+html, body { background: #fff !important; color: #000 !important; }
+.print-root { display: block !important; font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; }
+
+.print-title { font-family: Georgia, 'Times New Roman', serif; font-size: 20pt; letter-spacing: 0.4em; margin: 0; font-weight: 400; }
+.print-sub { margin: 1mm 0 4mm; color: #555; font-size: 9pt; letter-spacing: 0.1em; text-transform: uppercase; }
+.print-meta { margin: 0 0 4mm; padding-bottom: 3mm; border-bottom: 0.4mm solid #000; color: #333; font-size: 9pt; }
+
+.labels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+.label { display: grid; justify-items: center; gap: 1.5mm; padding: 3mm; border: 0.3mm dashed #888; text-align: center; break-inside: avoid; }
+.label__name { font-weight: 700; font-size: 9pt; line-height: 1.2; }
+.label__meta { font-size: 8pt; color: #444; letter-spacing: 0.05em; }
+.label__code { font-family: 'Courier New', monospace; font-size: 9pt; letter-spacing: 0.15em; }
+.label .qr { width: 26mm; height: 26mm; }
+.label .barcode { height: 14mm; width: 100%; }
+.label--loc .qr { width: 32mm; height: 32mm; }
+.label--loc .label__code { font-size: 13pt; font-weight: 700; }
+
+.report { border-collapse: collapse; width: 100%; font-size: 9pt; }
+.report th { background: #000; color: #fff; text-align: left; font-weight: 400; font-size: 8pt; letter-spacing: 0.12em; text-transform: uppercase; padding: 2mm; }
+.report td { padding: 1.6mm 2mm; border-bottom: 0.2mm solid #ddd; }
+.report tr { break-inside: avoid; }
+.report .num { text-align: right; font-variant-numeric: tabular-nums; }
+.report .alert { color: #a4161a; font-weight: 700; }
+.print-foot { margin-top: 6mm; font-size: 8pt; color: #777; display: flex; justify-content: space-between; }

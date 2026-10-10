@@ -5,7 +5,7 @@
 //   2. mute ensuite `db` (jamais d'erreur attendue à ce stade) ;
 //   3. journalise (historique de stock + audit) et retourne un résumé.
 // `ctx = { user:{id,name,role,depotId}, depotId, now:Date }` — `store.run()` rend l'ensemble transactionnel.
-import { LIMITS, ROLES, MOVES } from './config.js';
+import { LIMITS, ROLES } from './config.js';
 import { can } from './auth.js';
 import { locCode, stockOf, totalStock, isAlert } from './queries.js';
 import { isCode, nextInternalEan } from '../lib/ean.js';
@@ -548,4 +548,3 @@ export function importSuggestedParts(db, ctx, parts) {
   return created;
 }
 
-export { MOVES };

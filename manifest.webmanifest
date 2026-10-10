@@ -1,0 +1,23 @@
+{
+  "id": "./",
+  "name": "MODE — Gestion de stock",
+  "short_name": "MODE Stock",
+  "description": "Gestion de stock de pièces détachées : scan, transferts entre dépôts, inventaire, tableau de bord.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#111111",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Recevoir du stock", "short_name": "Recevoir", "url": "./#/scan/in", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Expédier du stock", "short_name": "Expédier", "url": "./#/scan/out", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
