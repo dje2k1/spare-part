@@ -237,12 +237,18 @@ a.kpi:hover, button.kpi:hover { transform: translateY(-2px); box-shadow: var(--s
 /* ── Dialogues natifs : feuille, modale, tiroir ── */
 dialog { color: var(--ink); }
 dialog::backdrop { background: var(--overlay); }
-.sheet { margin: auto auto 0; width: 100%; max-width: var(--content-w); max-height: 92dvh; padding: 0; border: 0; border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--surface); box-shadow: var(--shadow-3); overscroll-behavior: contain; }
+/* La feuille prend la hauteur de son contenu (jusqu'à 92 % de l'écran) et glisse avec le doigt : --drag est posé
+   par js/ui/dialogs.js pendant le geste (poignée ou en-tête tirés vers le bas → fermeture). */
+.sheet { --drag: 0px; margin: auto auto 0; width: 100%; max-width: var(--content-w); max-height: 92dvh; padding: 0; border: 0; border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--surface); box-shadow: var(--shadow-3); overscroll-behavior: contain; transform: translateY(var(--drag)); transition: transform 220ms var(--ease-out); }
+.sheet.is-dragging { transition: none; user-select: none; -webkit-user-select: none; }
 .sheet[open] { display: flex; flex-direction: column; animation: sheet-in var(--dur-slow) var(--ease-out); }
-.sheet__grab { width: 2.75rem; height: 5px; margin: var(--s2) auto 0; border-radius: var(--r-pill); background: var(--line-strong); flex: none; }
-.sheet__head { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s3) var(--s3) var(--s5); border-bottom: 1px solid var(--line); flex: none; }
+.sheet__grab { position: relative; width: 2.75rem; height: 5px; margin: var(--s2) auto 0; border-radius: var(--r-pill); background: var(--line-strong); flex: none; cursor: grab; touch-action: none; }
+.sheet__grab::before { content: ''; position: absolute; inset: -0.75rem -3rem; } /* zone de prise à la taille du pouce */
+.sheet__head { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s3) var(--s3) var(--s5); border-bottom: 1px solid var(--line); flex: none; touch-action: none; }
 .sheet__title { flex: 1; min-width: 0; font-size: var(--fs-xl); overflow-wrap: anywhere; }
-.sheet__body { overflow-y: auto; padding: var(--s5); padding-bottom: calc(var(--s5) + var(--safe-b)); flex: 1; overscroll-behavior: contain; }
+/* flex-basis auto (et non `flex: 1`, soit 0 %) : sans hauteur fixe, WebKit (Safari sur iPhone) prendrait ce 0 % au mot
+   et écraserait le corps à son seul rembourrage — la feuille resterait coincée à 2 cm du bas. */
+.sheet__body { overflow-y: auto; padding: var(--s5); padding-bottom: calc(var(--s5) + var(--safe-b)); flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; }
 .sheet__foot { display: flex; gap: var(--s3); padding: var(--s3) var(--s5); padding-bottom: calc(var(--s3) + var(--safe-b)); border-top: 1px solid var(--line); flex: none; background: var(--surface); }
 .sheet__foot .btn { flex: 1; }
 

@@ -33,6 +33,7 @@ export function openSheet({ title, body, foot, mount, onClose }) {
     ${foot ? html`<div class="sheet__foot">${foot}</div>` : ''}`);
   sheetOnClose = onClose ?? null;
   sheetGen++;
+  dlg.style.removeProperty('--drag');
   if (!dlg.open) {
     dlg.showModal();
     history.pushState({ sheet: true }, '');
@@ -57,11 +58,48 @@ export function closeSheet() {
 export const isSheetOpen = () => sheet().open;
 
 function afterSheetClosed() {
+  sheet().style.removeProperty('--drag');
   if (sheetPushed) { sheetPushed = false; if (history.state?.sheet) history.back(); }
   const cb = sheetOnClose; sheetOnClose = null;
   cb?.();
   const waiting = sheetClosing; sheetClosing = [];
   waiting.forEach((r) => r());
+}
+
+/**
+ * Geste sur la feuille : la poignée ou l'en-tête (hors boutons) suivent le doigt vers le bas. Relâchée au-delà du
+ * seuil (30 % de la hauteur, 160 px au plus) ou d'un mouvement vif, la feuille glisse hors de l'écran et se ferme ;
+ * sinon elle revient en place. Le corps, lui, reste libre de défiler.
+ */
+function bindSheetDrag(dlg) {
+  let g = null;
+  const zone = (t) => t instanceof Element && t.closest('.sheet__grab, .sheet__head') && !t.closest('button, a, input, select, textarea, label');
+  dlg.addEventListener('pointerdown', (e) => {
+    if (!dlg.open || e.button > 0 || !zone(e.target)) return;
+    const el = e.target.closest('.sheet__grab, .sheet__head');
+    g = { id: e.pointerId, y: e.clientY, t: e.timeStamp, dy: 0, h: dlg.offsetHeight };
+    el.setPointerCapture?.(e.pointerId); // capture sur la zone, pas sur la feuille : un simple appui n'est pas un clic d'arrière-plan
+    dlg.classList.add('is-dragging');
+  });
+  dlg.addEventListener('pointermove', (e) => {
+    if (!g || e.pointerId !== g.id) return;
+    g.dy = Math.max(0, e.clientY - g.y);
+    dlg.style.setProperty('--drag', `${g.dy}px`);
+  });
+  const end = (e) => {
+    if (!g || e.pointerId !== g.id) return;
+    const { dy, h, t } = g;
+    g = null;
+    dlg.classList.remove('is-dragging');
+    const flick = dy > 40 && dy / Math.max(1, e.timeStamp - t) > 0.6; // > 0,6 px/ms
+    if (e.type === 'pointerup' && (dy > Math.min(160, h * 0.3) || flick)) {
+      const gen = sheetGen;
+      dlg.style.setProperty('--drag', `${h + 24}px`); // sort de l'écran, puis se ferme
+      setTimeout(() => { if (gen === sheetGen) closeSheet(); }, 200);
+    } else dlg.style.removeProperty('--drag');
+  };
+  dlg.addEventListener('pointerup', end);
+  dlg.addEventListener('pointercancel', end);
 }
 
 // ── Tiroir ──
@@ -167,6 +205,7 @@ export function promptDialog({ title, label, value = '', type = 'text', hint = '
 // ── Branchements globaux (une seule fois) ──
 export function initDialogs() {
   sheet().addEventListener('close', afterSheetClosed);
+  bindSheetDrag(sheet());
   // Clic sur l'arrière-plan = fermeture
   for (const dlg of [sheet(), drawer()]) {
     dlg.addEventListener('click', (e) => { if (e.target === dlg) (dlg === sheet() ? closeSheet() : closeDrawer()); });
