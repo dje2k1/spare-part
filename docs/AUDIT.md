@@ -26,6 +26,7 @@ Chaque constat est marqué : ✅ corrigé dans la refonte · 💡 proposition no
 | F14 | Aucune navigation par historique : le retour Android quitte l'application | Perte de contexte | ✅ routage par hash + retour système |
 | F15 | Pas de liste de réassort ni d'export | Réapprovisionnement manuel | ✅ « À réapprovisionner » + exports CSV |
 | F16 | Pas de motif sur les sorties, pas d'étiquettes imprimables pour articles sans code-barres | Traçabilité faible | ✅ motifs + codes internes EAN-13 + étiquettes |
+| F17 | Le décodeur EAN-13 de repli (photo fixe) renvoyait un code sur 286 lignes de bruit aléatoire sur 300 : tolérances trop larges, pas de zone de silence ni de contrôle des gardes ; mon ancien test acceptait ce cas (« soit null, soit un EAN valide ») et le masquait | Une photo sans code-barres pouvait enregistrer un mouvement sur un mauvais article | ✅ décodeur durci (silence, gardes, cohérence d'unité, meilleur appariement) + binarisation corrigée ; 0 faux positif sur 1 000 lignes de bruit |
 
 ## 2. Ergonomie et design
 
