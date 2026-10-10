@@ -4,7 +4,9 @@ import { shrink } from '../../lib/image.js';
 import { icon, actions, $, setHtml, val } from '../dom.js';
 import { can, run, storage, state } from '../state.js';
 import { importSuggestedPartsOp } from '../../core/registry.js';
-import { analyzePhoto, readApiKey, saveApiKey, clearApiKey, AiError, AI } from '../../core/ai.js';
+import { analyzePhoto, analyzeViaServer, readApiKey, saveApiKey, clearApiKey, AiError, AI } from '../../core/ai.js';
+import { serverConfig } from '../sync-ui.js';
+import { apiUrl } from '../net.js';
 import { pageHead } from '../components.js';
 import { navigate } from '../router.js';
 import { confirmDialog } from '../dialogs.js';
@@ -12,6 +14,8 @@ import { toast } from '../toast.js';
 
 const P = { phase: 'idle', photo: null, result: null, selected: new Set(), error: '', abort: null };
 const PRIORITY = { high: ['pill--zero', 'Essentiel'], medium: ['pill--low', 'Courant'], low: ['', 'Optionnel'] };
+/** Mode serveur avec clé configurée : l'analyse passe par le serveur, aucune clé sur l'appareil. */
+const viaServer = () => state.serverMode && Boolean(serverConfig()?.ai);
 
 const render = () => html`<section>
   ${pageHead({ eyebrow: 'Reconnaissance produit', title: 'Analyser une pièce', sub: 'Photographiez un article pour obtenir la liste de ses pièces détachées probables.' })}
@@ -28,7 +32,7 @@ function keyBox() {
 }
 
 function body() {
-  const hasKey = Boolean(readApiKey(storage));
+  const hasKey = viaServer() || Boolean(readApiKey(storage));
   if (!hasKey && P.phase !== 'loading') return html`${P.phase === 'error' ? html`<div class="banner banner--error" role="alert">${icon('alert', 'i--sm')}<span class="banner__text">${P.error}</span></div>` : ''}${keyBox()}`;
   switch (P.phase) {
     case 'loading':
@@ -68,7 +72,10 @@ function resultView() {
 function paint() {
   const host = $('#photo-body');
   if (!host) return;
-  setHtml(host, html`${body()}${readApiKey(storage) ? html`<p class="center"><button type="button" class="btn btn--text" data-action="photo.key.remove">Supprimer ma clé API de cet appareil</button></p><p class="muted center photo-model">Modèle : ${AI.model}</p>` : ''}`);
+  const foot = viaServer()
+    ? html`<p class="muted center photo-model">Analyse assurée par le serveur de l'entreprise · ${AI.model}${serverConfig().aiDailyLimit ? ` · ${serverConfig().aiDailyLimit} analyses par jour et par compte` : ''}</p>`
+    : readApiKey(storage) ? html`<p class="center"><button type="button" class="btn btn--text" data-action="photo.key.remove">Supprimer ma clé API de cet appareil</button></p><p class="muted center photo-model">Modèle : ${AI.model}</p>` : '';
+  setHtml(host, html`${body()}${foot}`);
 }
 
 export const photoRoute = { title: 'Analyser une pièce', back: true, perm: 'article.edit', refresh: 'none', render, mount: paint, unmount: () => { P.abort?.abort(); P.phase = 'idle'; P.photo = null; P.result = null; P.selected = new Set(); } };
@@ -91,7 +98,9 @@ export function initPhoto() {
     async 'photo.analyze'() {
       P.phase = 'loading'; P.abort = new AbortController(); paint();
       try {
-        P.result = await analyzePhoto({ apiKey: readApiKey(storage), base64: P.photo.base64, mime: 'image/jpeg', signal: P.abort.signal });
+        P.result = viaServer()
+          ? await analyzeViaServer({ url: apiUrl('ai/analyze'), base64: P.photo.base64, mime: 'image/jpeg', signal: P.abort.signal })
+          : await analyzePhoto({ apiKey: readApiKey(storage), base64: P.photo.base64, mime: 'image/jpeg', signal: P.abort.signal });
         P.selected = new Set(P.result.parts.filter((p) => p.priority === 'high').map((p) => p.id));
         P.phase = 'result';
       } catch (e) {

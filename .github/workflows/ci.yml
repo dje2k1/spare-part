@@ -22,9 +22,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
       - run: npm ci
+      - name: Dépendances du serveur de synchronisation
+        run: npm ci --prefix server
       - name: Tests unitaires (métier, PWA, jetons de design, règles statiques)
         run: npm run test:unit
+      - name: Tests du serveur (journal, API, sécurité, temps réel, moteur de synchronisation, relais IA)
+        run: npm run test:server
       - name: Navigateur de test
         run: npx playwright install --with-deps chromium
       - name: Tests de bout en bout (sous-chemin /spare-part/)

@@ -1,0 +1,15 @@
+{
+  "name": "mode-stock-server",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Serveur de synchronisation MODE Stock : sert l'application, synchronise les appareils, relaie l'IA",
+  "type": "module",
+  "main": "index.js",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  }
+}

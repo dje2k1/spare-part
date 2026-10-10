@@ -8,6 +8,7 @@ import { emptyDb, normalizeDb, makeBackup, parseBackup } from './schema.js';
  */
 export function createStore({ storage, now = () => new Date() }) {
   let db = null;
+  let external = null; // mode serveur : la base vient du moteur de synchronisation (core/sync-engine.js)
   let status = { recovered: false, migrated: false, notes: [], saveError: null, trimmed: false };
   const subs = new Set();
   const emit = (event, detail) => subs.forEach((fn) => { try { fn(event, detail); } catch (e) { console.error(e); } });
@@ -21,6 +22,7 @@ export function createStore({ storage, now = () => new Date() }) {
 
   /** Écrit la base ; en cas de quota dépassé, élague les plus anciens journaux et réessaie une fois. */
   function save() {
+    if (external) return true; // la copie locale est gérée par le moteur de synchronisation
     trim();
     db.meta.rev += 1;
     const attempt = () => storage.setItem(KEYS.db, JSON.stringify(db));
@@ -88,9 +90,15 @@ export function createStore({ storage, now = () => new Date() }) {
   return {
     load,
     cleanObsolete,
-    get db() { return db; },
+    get db() { return external ? external.db : db; },
     get status() { return status; },
-    get isEmpty() { return db === null; },
+    get isEmpty() { return external ? !external.db : db === null; },
+    get external() { return Boolean(external); },
+
+    /** Mode serveur : `source.db` devient la base de l'application ; le stockage local n'est plus utilisé. */
+    attach(source) { external = source; },
+    /** Signale aux écouteurs une modification faite hors du store (moteur de synchronisation). */
+    notify(event, detail) { emit(event, detail); },
 
     /** Remplace toute la base (première installation, restauration, réinitialisation). */
     replace(next) {
@@ -104,6 +112,7 @@ export function createStore({ storage, now = () => new Date() }) {
 
     /** Recharge depuis le stockage (autre onglet, ou annulation d'une opération en erreur). */
     reload() {
+      if (external) return external.db;
       const prev = db;
       load();
       if (!db) db = prev;
@@ -119,6 +128,7 @@ export function createStore({ storage, now = () => new Date() }) {
      * @returns {T}
      */
     run(fn) {
+      if (external) throw new Error('Mode serveur : les opérations passent par le moteur de synchronisation.');
       try {
         const result = fn(db);
         save();
@@ -151,10 +161,10 @@ export function createStore({ storage, now = () => new Date() }) {
     },
 
     /** Octets utilisés par la base (approximation en caractères UTF-16 → octets). */
-    sizeBytes() { const v = read(KEYS.db); return v ? v.length * 2 : 0; },
+    sizeBytes() { if (external) return 0; const v = read(KEYS.db); return v ? v.length * 2 : 0; },
 
     /** Modifications depuis la dernière sauvegarde exportée. */
-    changesSinceBackup() { return db ? db.meta.rev - db.meta.lastBackupRev : 0; },
+    changesSinceBackup() { return db && !external ? db.meta.rev - db.meta.lastBackupRev : 0; },
 
     freshDb: () => emptyDb(now()),
   };

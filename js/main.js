@@ -7,6 +7,7 @@ import { initLogin, showLogin } from './ui/views/login.js';
 import { setLogoutHandler, setBanner, clearBanner, runBanner, updateChrome, endSession } from './ui/session.js';
 import { initMenu, setInstallPrompt } from './ui/menu.js';
 import { initBriefing } from './ui/briefing.js';
+import { detectServer, initServerMode, initSyncUi } from './ui/sync-ui.js';
 import { routes, initViews } from './ui/routes.js';
 import { upgradeLegacyPins } from './core/auth.js';
 import { KEYS } from './core/config.js';
@@ -14,8 +15,27 @@ import { toast } from './ui/toast.js';
 
 window.__errors = [];
 
+/**
+ * Modifications venues d'autres appareils : écran mis à jour au plus une fois par seconde, et jamais pendant
+ * une saisie (champ actif) — le texte en cours de frappe n'est pas effacé par un rafraîchissement.
+ */
+let remoteTimer = null;
+function remoteRefresh() {
+  if (remoteTimer) return;
+  remoteTimer = setTimeout(() => {
+    remoteTimer = null;
+    if (!state.session) return;
+    const a = document.activeElement;
+    if (a && a.closest?.('#view') && a.matches('input, textarea, select')) {
+      a.addEventListener('blur', () => setTimeout(remoteRefresh, 50), { once: true });
+      return;
+    }
+    refresh();
+  }, 1000);
+}
+
 function wireStore() {
-  store.subscribe((event) => {
+  store.subscribe((event, detail) => {
     if (event === 'save-error') {
       setBanner('save', { tone: 'error', text: 'Sauvegarde impossible : le stockage de l\'appareil est plein ou bloqué. Exportez vos données dès que possible.', action: { label: 'Exporter', run: () => location.assign('#/admin?s=data') } });
     } else if (event === 'saved') clearBanner('save');
@@ -24,7 +44,7 @@ function wireStore() {
     if (event === 'changed' || event === 'reloaded' || event === 'replaced') {
       if (!revalidateSession()) return;
       updateChrome();
-      refresh();
+      if (detail?.remote || detail?.reset) remoteRefresh(); else refresh();
     }
   });
 }
@@ -41,7 +61,7 @@ function revalidateSession() {
 
 function wireGlobal() {
   // Un autre onglet a écrit : on recharge (évite que le dernier écrivain écrase silencieusement).
-  window.addEventListener('storage', (e) => { if (e.key === KEYS.db && e.newValue && state.session) store.reload(); });
+  window.addEventListener('storage', (e) => { if (e.key === KEYS.db && e.newValue && state.session && !state.serverMode) store.reload(); });
   const net = () => { state.online = navigator.onLine; if (state.session) updateChrome(); };
   window.addEventListener('online', net);
   window.addEventListener('offline', net);
@@ -84,6 +104,7 @@ async function boot() {
   initLogin();
   initMenu();
   initBriefing();
+  initSyncUi();
   initViews();
   actions({
     'nav.back': () => back(),
@@ -91,13 +112,18 @@ async function boot() {
     'sync.status': () => syncEngine()?.openStatus(),
   });
   defineRoutes(routes);
-  setLogoutHandler((message) => showLogin(message));
+  setLogoutHandler((message, opts) => showLogin(message, opts));
   wireStore();
   wireGlobal();
 
   store.cleanObsolete();
-  store.load();
-  if (store.db && (await upgradeLegacyPins(store.db)) > 0) store.save(); // PIN en clair (ancienne version) → hachés
+  // Servie par le serveur de synchronisation → données partagées entre appareils ; sinon : autonome (données locales)
+  const server = await detectServer();
+  if (server) await initServerMode(server);
+  else {
+    store.load();
+    if (store.db && (await upgradeLegacyPins(store.db)) > 0) store.save(); // PIN en clair (ancienne version) → hachés
+  }
   showLogin();
   registerWorker();
   $('#boot')?.remove();

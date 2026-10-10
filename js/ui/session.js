@@ -9,6 +9,7 @@ import { startRouter, stopRouter } from './router.js';
 import { closeTransient } from './dialogs.js';
 import { maybeShowBriefing } from './briefing.js';
 import { toast } from './toast.js';
+import { serverLogout, paint as paintSync } from './sync-ui.js';
 
 let lastActivity = Date.now();
 let idleTimer = null;
@@ -56,10 +57,12 @@ export function startSession(user, depotId) {
 /**
  * Ferme la session. `replaceDb` : base à installer (restauration, passage en production) — elle l'est
  * APRÈS avoir détaché la session, sinon l'écouteur du store reverrait une session dont le compte a disparu.
+ * `userId` : compte proposé directement à la reconnexion (mode serveur, session expirée).
  */
-export function endSession(message = '', { replaceDb = null } = {}) {
+export function endSession(message = '', { replaceDb = null, userId = null } = {}) {
   if (!state.session) return;
-  if (!replaceDb) try { run(recordAuth, { kind: 'logout' }); } catch { /* base indisponible : on déconnecte quand même */ }
+  if (state.serverMode) serverLogout(); // saisies en attente envoyées, puis session serveur fermée (et journalisée)
+  else if (!replaceDb) try { run(recordAuth, { kind: 'logout' }); } catch { /* base indisponible : on déconnecte quand même */ }
   state.session = null; // avant tout remplacement : les écouteurs du store (revalidation) ne doivent plus voir de session
   if (replaceDb) store.replace(replaceDb);
   stopRouter();
@@ -67,7 +70,7 @@ export function endSession(message = '', { replaceDb = null } = {}) {
   disarmIdle();
   $('#app').hidden = true;
   history.replaceState(null, '', location.pathname + location.search);
-  onLogout(message);
+  onLogout(message, { userId });
 }
 
 /** Dépôt actif (administrateur : changement de dépôt sans se reconnecter). */
@@ -93,7 +96,8 @@ export function updateChrome() {
   count.textContent = String(n);
   count.setAttribute('aria-label', d.kind === 'central' ? `${n} commande(s) à préparer` : `${n} livraison(s) à réceptionner`);
   $('#menu-dot').hidden = true;
-  $('#net-dot').hidden = state.online;
+  $('#net-dot').hidden = state.online || state.serverMode; // mode serveur : le bouton de synchronisation indique l'état
+  if (state.serverMode) paintSync();
   updateBanners();
 }
 

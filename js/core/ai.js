@@ -166,3 +166,24 @@ export async function analyzePhoto({ apiKey, base64, mime, fetchImpl = globalThi
   try { data = await res.json(); } catch { throw new AiError('Réponse illisible de l\'API.', { code: 'parse' }); }
   return parseResponse(data);
 }
+
+/**
+ * Mode serveur : l'analyse passe par le serveur de l'entreprise, qui détient la clé API (aucune clé sur l'appareil).
+ * `url` : adresse de /api/ai/analyze ; `fetchImpl` injectable (tests).
+ */
+export async function analyzeViaServer({ url, base64, mime, fetchImpl = globalThis.fetch.bind(globalThis), signal }) {
+  let res;
+  try {
+    res = await fetchImpl(url, { method: 'POST', signal, credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ base64, mime }) });
+  } catch (e) {
+    if (e?.name === 'AbortError') throw new AiError('Analyse annulée.', { code: 'abort' });
+    throw new AiError('Serveur injoignable : l\'analyse nécessite une connexion.', { code: 'network' });
+  }
+  let data = null;
+  try { data = await res.json(); } catch { /* corps non JSON */ }
+  if (!res.ok) {
+    if (res.status === 401) throw new AiError('Session expirée : reconnectez-vous pour analyser une photo.', { code: 'session' });
+    throw new AiError(str(data?.error, 200) || `Erreur du serveur (${res.status}).`, { code: `http${res.status}` });
+  }
+  return parseResponse(data?.message);
+}

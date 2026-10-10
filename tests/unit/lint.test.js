@@ -5,16 +5,27 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const walk = (d) => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
 const jsFiles = walk(join(root, 'js')).filter((f) => f.endsWith('.js'));
+const serverFiles = readdirSync(join(root, 'server')).filter((n) => n.endsWith('.js')).map((n) => join(root, 'server', n));
 const rel = (f) => relative(root, f);
 const src = (f) => readFileSync(f, 'utf8');
 const esc = (n) => n.replace(/[$]/g, '\\$&');
 /** Nombre d'occurrences d'un identifiant (bornes correctes y compris pour `$`). */
 const count = (text, name) => text.split(new RegExp(`(?<![\\w$])${esc(name)}(?![\\w$])`)).length - 1;
 const code = (s) => s;
+
+test('syntaxe valide de tous les modules (application et serveur), sans navigateur', () => {
+  const bad = [];
+  for (const f of [...jsFiles, ...serverFiles, join(root, 'sw.js')]) {
+    const r = spawnSync(process.execPath, ['--check', f], { encoding: 'utf8' });
+    if (r.status !== 0) bad.push(`${rel(f)} : ${r.stderr.split('\n').find((l) => /Error/.test(l)) ?? r.stderr}`);
+  }
+  assert.deepEqual(bad, []);
+});
 
 test('aucun import inutilisé', () => {
   const bad = [];

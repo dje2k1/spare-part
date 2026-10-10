@@ -15,6 +15,8 @@ import { printLabels, printStockReport } from '../print.js';
 import { endSession } from '../session.js';
 import { refresh } from '../router.js';
 import { toast } from '../toast.js';
+import { downloadServerBackup, restoreOnServer, serverConfig } from '../sync-ui.js';
+import { makeBackup } from '../../core/schema.js';
 
 const SECTIONS = [
   { key: 'users', perm: 'user.manage', icon: 'users', title: 'Utilisateurs et rôles', desc: 'Comptes, rôles, dépôts, PIN' },
@@ -43,6 +45,7 @@ function render(r) {
 export const adminRoute = {
   title: (r) => allowed().find((s) => s.key === r.params.get('s'))?.title ?? 'Administration',
   back: true, perm: 'import', render,
+  mount: (root, r) => { if (r.params.get('s') === 'data') paintStorage(); },
 };
 
 // ── Utilisateurs ──
@@ -153,15 +156,27 @@ function exporter() {
 }
 
 // ── Données ──
-function data() {
+function backupCard() {
+  if (state.serverMode) {
+    return html`<section class="card stack"><h3 class="card__title">${icon('cloud', 'i--sm')} Sauvegarde du serveur</h3>
+      <p class="muted">Les données de tous les dépôts sont enregistrées sur le serveur de l'entreprise (journal et instantanés sur disque). Téléchargez régulièrement une sauvegarde complète et conservez-la hors du serveur.</p>
+      <button type="button" class="btn btn--primary btn--block" data-action="adm.backup">${icon('download')}Télécharger la sauvegarde du serveur</button>
+      <label class="btn btn--secondary btn--block" for="restore-file">${icon('upload')}Restaurer une sauvegarde sur le serveur…</label>
+      <input type="file" id="restore-file" class="sr-only" accept="application/json,.json" data-change="adm.restore"></section>`;
+  }
   const m = db().meta;
   const age = daysSince(m.lastBackupAt);
-  return html`<div class="pad stack">
-    <section class="card stack"><h3 class="card__title">${icon('download', 'i--sm')} Sauvegarde</h3>
-      <p class="muted">Toutes les données vivent sur cet appareil. ${m.lastBackupAt ? `Dernière sauvegarde : ${fmtDateTime(m.lastBackupAt)}${Number.isFinite(age) && age > 0 ? ` (il y a ${age} j)` : ''}.` : '<strong>Aucune sauvegarde exportée.</strong>'} ${plural(store.changesSinceBackup(), 'modification')} depuis.</p>
+  return html`<section class="card stack"><h3 class="card__title">${icon('download', 'i--sm')} Sauvegarde</h3>
+      <p class="muted">Toutes les données vivent sur cet appareil. ${m.lastBackupAt ? `Dernière sauvegarde : ${fmtDateTime(m.lastBackupAt)}${Number.isFinite(age) && age > 0 ? ` (il y a ${age} j)` : ''}.` : html`<strong>Aucune sauvegarde exportée.</strong>`} ${plural(store.changesSinceBackup(), 'modification')} depuis.</p>
       <button type="button" class="btn btn--primary btn--block" data-action="adm.backup">${icon('download')}Exporter une sauvegarde (JSON)</button>
       <label class="btn btn--secondary btn--block" for="restore-file">${icon('upload')}Restaurer une sauvegarde…</label>
-      <input type="file" id="restore-file" class="sr-only" accept="application/json,.json" data-change="adm.restore"></section>
+      <input type="file" id="restore-file" class="sr-only" accept="application/json,.json" data-change="adm.restore"></section>`;
+}
+
+function data() {
+  const m = db().meta;
+  return html`<div class="pad stack">
+    ${backupCard()}
     <section class="card stack"><h3 class="card__title">${icon('database', 'i--sm')} Stockage</h3><p class="muted" id="storage-info">Calcul en cours…</p></section>
     <section class="card stack"><h3 class="card__title">${icon('lock', 'i--sm')} Verrouillage automatique</h3>
       <label class="field"><span class="field__label">Se verrouiller après inactivité</span><select class="select" data-change="adm.lock">${[[0, 'Jamais'], [5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure']].map(([v, l]) => html`<option value="${v}" ${v === m.settings.sessionMinutes ? 'selected' : ''}>${l}</option>`)}</select></label></section>
@@ -180,14 +195,19 @@ function data() {
       <p class="muted">Ces données sont fictives. Passez en production pour partir d'un atelier vide avec votre propre administrateur.</p>
       <button type="button" class="btn btn--primary btn--block" data-action="adm.production">Passer en production…</button></section>` : ''}
     <section class="card stack"><h3 class="card__title text-red">Zone sensible</h3>
-      <button type="button" class="btn btn--danger btn--block" data-action="adm.wipe">${icon('trash')}Effacer toutes les données de cet appareil</button></section></div>`;
+      ${state.serverMode
+        ? html`<p class="muted">Les données du serveur ne sont jamais effacées depuis un appareil. Vous pouvez retirer de CET appareil le code d'accès, les comptes connus et la copie locale.</p>
+          <button type="button" class="btn btn--danger btn--block" data-action="sync.forget">${icon('trash')}Oublier cet appareil</button>`
+        : html`<button type="button" class="btn btn--danger btn--block" data-action="adm.wipe">${icon('trash')}Effacer toutes les données de cet appareil</button>`}</section></div>`;
 }
 
 async function paintStorage() {
   const el = $('#storage-info');
   if (!el) return;
   const own = store.sizeBytes();
-  let text = `Base de données : ${(own / 1024).toFixed(0)} Ko.`;
+  let text = state.serverMode
+    ? `Copie locale des données du serveur (consultation et saisie hors ligne)${serverConfig()?.ai ? ' · analyse photo assurée par le serveur' : ''}.`
+    : `Base de données : ${(own / 1024).toFixed(0)} Ko.`;
   try {
     const est = await navigator.storage?.estimate?.();
     const persisted = await navigator.storage?.persisted?.();
@@ -292,6 +312,7 @@ export function initAdmin() {
     },
     // Données
     'adm.backup': () => {
+      if (state.serverMode) { downloadServerBackup(); toast('Téléchargement de la sauvegarde du serveur… Conservez ce fichier en lieu sûr : il contient les empreintes de PIN.', { tone: 'ok', ms: 6000 }); return; }
       download(`mode-stock-sauvegarde-${stamp()}.json`, store.exportBackup(), 'application/json');
       toast('Sauvegarde exportée. Conservez ce fichier en lieu sûr : il contient les empreintes de PIN.', { tone: 'ok', ms: 6000 });
       refresh();
@@ -301,9 +322,16 @@ export function initAdmin() {
       if (!f) return;
       try {
         const { db: restored, exportedAt } = store.importBackup(await f.text());
-        const ok = await confirmDialog({ title: 'Remplacer toutes les données ?', message: `La sauvegarde du ${fmtDateTime(exportedAt)} (${plural(Object.keys(restored.articles).length, 'article')}, ${plural(Object.keys(restored.users).length, 'utilisateur')}) remplacera les données actuelles. Vous serez déconnecté.`, confirmLabel: 'Restaurer', danger: true });
+        const ok = await confirmDialog({ title: 'Remplacer toutes les données ?', message: `La sauvegarde du ${fmtDateTime(exportedAt)} (${plural(Object.keys(restored.articles).length, 'article')}, ${plural(Object.keys(restored.users).length, 'utilisateur')}) remplacera les données actuelles${state.serverMode ? ' DU SERVEUR, pour tous les dépôts et tous les appareils' : ''}. Vous serez déconnecté.`, confirmLabel: 'Restaurer', danger: true });
         if (!ok) return;
         await upgradeLegacyPins(restored);
+        if (state.serverMode) {
+          const r = await restoreOnServer(makeBackup(restored));
+          if (r.keptSession) toast('Sauvegarde restaurée sur le serveur : tous les appareils se mettent à jour.', { tone: 'ok', ms: 6000 });
+          else endSession('Sauvegarde restaurée sur le serveur : reconnectez-vous.');
+          input.value = '';
+          return;
+        }
         endSession('Sauvegarde restaurée : reconnectez-vous.', { replaceDb: restored });
       } catch (e) { toast(e.message, { tone: 'error' }); }
       input.value = '';
@@ -317,7 +345,7 @@ export function initAdmin() {
       openSheet({
         title: 'Passer en production',
         body: html`<form class="stack" data-submit="adm.production.go" novalidate>
-          <p class="muted">Toutes les données de démonstration seront effacées. Vous repartez d'un atelier vide.</p>
+          <p class="muted">Toutes les données de démonstration seront effacées${state.serverMode ? ' du serveur, pour tous les appareils. Vous repartez d\'un entrepôt central vide (ajoutez ensuite vos ateliers et vos comptes)' : '. Vous repartez d\'un atelier vide'}.</p>
           <label class="field"><span class="field__label">Nom du dépôt</span><input class="input" name="depot" maxlength="60" required></label>
           <label class="field"><span class="field__label">Code (facultatif)</span><input class="input" name="code" maxlength="10"></label>
           <label class="field"><span class="field__label">Administrateur</span><input class="input" name="admin" maxlength="60" value="${state.session.user.name === 'Administrateur' ? '' : state.session.user.name}" required></label>
@@ -335,8 +363,13 @@ export function initAdmin() {
       if (!pol.ok) { err.textContent = pol.reason; return; }
       if (pin !== val(form, 'pin2')) { err.textContent = 'Les deux PIN ne correspondent pas.'; return; }
       if (!(await confirmDialog({ title: 'Effacer les données de démonstration ?', message: 'Cette action est définitive.', confirmLabel: 'Effacer', danger: true }))) return;
-      const fresh = await buildFreshDb(new Date(), { adminName: val(form, 'admin'), pin, depotName: val(form, 'depot'), depotCode: val(form, 'code') });
+      const fresh = await buildFreshDb(new Date(), { adminName: val(form, 'admin'), pin, depotName: val(form, 'depot'), depotCode: val(form, 'code'), depotKind: state.serverMode ? 'central' : 'atelier' });
       await closeSheet();
+      if (state.serverMode) {
+        try { await restoreOnServer(makeBackup(fresh)); } catch (e) { toast(e.message, { tone: 'error' }); return; }
+        endSession('Données de démonstration effacées sur le serveur : connectez-vous avec votre compte administrateur.');
+        return;
+      }
       endSession('Atelier créé : connectez-vous avec votre compte administrateur.', { replaceDb: fresh });
     },
     async 'adm.wipe'() {

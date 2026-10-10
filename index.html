@@ -7,6 +7,7 @@
      connect-src n'autorise que l'API Anthropic (analyse photo, clé fournie par l'utilisateur). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.anthropic.com; media-src 'self' blob:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
+<meta name="mode-sync" content="static"><!-- « server » quand la page est servie par le serveur de synchronisation (server/app.js) -->
 <title>MODE — Gestion de Stock</title>
 <meta name="description" content="Gestion de stock de pièces détachées : scan, transferts entre dépôts, inventaire, tableau de bord.">
 <meta name="color-scheme" content="light dark">

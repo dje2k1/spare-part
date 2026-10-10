@@ -300,14 +300,14 @@ export function makeBackup(db, now = new Date()) {
   return JSON.stringify({ app: 'mode-stock', schema: DB_VERSION, exportedAt: now.toISOString(), data: db });
 }
 
-/** Lit et valide une sauvegarde (texte JSON). Lève une Error au message affichable. */
-export function parseBackup(text, now = new Date()) {
-  if (typeof text !== 'string' || text.length > LIMITS.backupBytes) throw new Error('Fichier trop volumineux ou illisible');
+/** Lit et valide une sauvegarde (texte JSON). Lève une Error au message affichable. `opts` : voir normalizeDb (serveur : journaux non élagués). */
+export function parseBackup(text, now = new Date(), { limits = LIMITS, maxBytes = LIMITS.backupBytes } = {}) {
+  if (typeof text !== 'string' || text.length > maxBytes) throw new Error('Fichier trop volumineux ou illisible');
   let json;
   try { json = JSON.parse(text); } catch { throw new Error('Ce fichier n\'est pas une sauvegarde valide (JSON illisible)'); }
   if (json?.app !== 'mode-stock' || !isObj(json.data)) throw new Error('Ce fichier n\'est pas une sauvegarde MODE Stock');
   if (!Number.isInteger(json.schema) || json.schema > DB_VERSION) throw new Error('Sauvegarde créée par une version plus récente de l\'application');
-  const { db, notes } = normalizeDb(json.data, now);
+  const { db, notes } = normalizeDb(json.data, now, { limits });
   if (!Object.keys(db.depots).length) throw new Error('La sauvegarde ne contient aucun dépôt');
   if (!Object.values(db.users).some((u) => u.role === 'admin' && (u.pin || u.pinLegacy))) throw new Error('La sauvegarde ne contient aucun administrateur utilisable');
   return { db, notes, exportedAt: json.exportedAt };

@@ -1,14 +1,17 @@
 {
   "name": "mode-stock",
-  "version": "2.0.0",
-  "description": "MODE Stock — gestion de stock de pièces détachées (PWA statique, 100 % côté client)",
+  "version": "3.0.0",
+  "description": "MODE Stock — gestion de stock de pièces détachées : PWA (autonome ou synchronisée par le serveur de l'entreprise)",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:unit && npm run test:e2e",
+    "test": "npm run test:unit && npm run test:server && npm run test:e2e",
     "test:unit": "node --test \"tests/unit/*.test.js\"",
+    "test:server": "node --test \"tests/server/*.test.js\"",
     "test:e2e": "playwright test",
     "serve": "node tests/serve.js",
+    "server": "node server/index.js",
+    "server:demo": "DEMO=1 DATA_DIR=server/data-demo node server/index.js",
     "vendor": "node scripts/vendor.js",
     "sw": "node scripts/sw-precache.js",
     "icons": "node scripts/icons.js"

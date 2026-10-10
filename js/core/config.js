@@ -15,7 +15,8 @@ export const KEYS = {
   session: 'mode_inventory_draft',
   // Synchronisation (mode serveur)
   syncQueue: 'mode_sync_queue', // opérations en attente d'envoi (survit à la fermeture de l'application)
-  syncState: 'mode_sync_state', // version confirmée + session serveur
+  syncState: 'mode_sync_state', // mode serveur détecté + annuaire de connexion en cache
+  syncRejected: 'mode_sync_rejected', // opérations refusées par le serveur, à montrer à l'utilisateur
   knownUsers: 'mode_known_users', // empreintes des comptes déjà connectés sur CET appareil (déverrouillage hors ligne)
   orgCode: 'mode_org_code',
   briefing: 'mode_briefing_seen',

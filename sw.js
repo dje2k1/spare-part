@@ -40,6 +40,7 @@ const PRECACHE = [
   'js/core/schema.js',
   'js/core/seed.js',
   'js/core/store.js',
+  'js/core/sync-engine.js',
   'js/lib/charts.js',
   'js/lib/csv.js',
   'js/lib/ean.js',
@@ -55,14 +56,17 @@ const PRECACHE = [
   'js/ui/dialogs.js',
   'js/ui/dom.js',
   'js/ui/feedback.js',
+  'js/ui/idb.js',
   'js/ui/keypad.js',
   'js/ui/menu.js',
+  'js/ui/net.js',
   'js/ui/print.js',
   'js/ui/router.js',
   'js/ui/routes.js',
   'js/ui/scanner.js',
   'js/ui/session.js',
   'js/ui/state.js',
+  'js/ui/sync-ui.js',
   'js/ui/toast.js',
   'js/ui/views/admin.js',
   'js/ui/views/article-sheet.js',
@@ -118,6 +122,7 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // API Anthropic et tout tiers : jamais interceptés
+  if (url.pathname.startsWith(new URL('api/', self.registration.scope).pathname)) return; // serveur de synchronisation : toujours en direct
   event.respondWith((async () => {
     const hit = await caches.match(request, { ignoreSearch: true });
     if (hit) return hit;
