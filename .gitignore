@@ -3,3 +3,6 @@ test-results/
 playwright-report/
 .DS_Store
 *.log
+server/data/
+server/data-*/
+.env
