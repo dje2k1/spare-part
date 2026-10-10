@@ -1,12 +1,12 @@
 // Étiquettes (fonction avancée) : choisir des pièces ou des emplacements, le nombre d'exemplaires, puis
 // imprimer sur l'imprimante de CET appareil (bureau : planches A4 ; thermique : rouleau, impression
 // système ou fichier ZPL). Le profil d'imprimante est une préférence d'appareil.
-import { html, fmtInt, plural } from '../../lib/text.js';
+import { html, fmtInt, plural, localDay } from '../../lib/text.js';
 import { LABEL_FORMATS, PRINTER_TYPES, normalizePrinter, toZpl } from '../../lib/labels.js';
 import { isCode } from '../../lib/ean.js';
 import { icon, actions, $, setHtml, val, download } from '../dom.js';
 import { db, depot, prefs } from '../state.js';
-import { searchArticles, articleLocations, locCode, reorderList } from '../../core/queries.js';
+import { searchArticles, articleLocations, locCode, reorderList, resolveEan } from '../../core/queries.js';
 import { pageHead, segmented, emptyState } from '../components.js';
 import { openSheet, closeSheet } from '../dialogs.js';
 import { printLabelJob, printerProfile, articleItem, locationItem } from '../print.js';
@@ -115,8 +115,9 @@ function paint() {
     <div class="sticky-action"><button type="button" class="btn btn--primary btn--block" data-action="labels.print" ${total ? '' : 'disabled'}>${icon(p.output === 'zpl' ? 'download' : 'printer')}${p.output === 'zpl' ? 'Télécharger' : 'Imprimer'} ${plural(total, 'étiquette')}</button></div>`);
 }
 
-function addEan(code) {
-  if (!isCode(code) || !db().articles[code]) { feedback('error'); toast(`Code ${code} inconnu du catalogue.`, { tone: 'error' }); return false; }
+function addEan(scanned) {
+  const code = resolveEan(db(), scanned);
+  if (!code) { feedback('error'); toast(`Code ${scanned} inconnu du catalogue.`, { tone: 'error' }); return false; }
   feedback('scan');
   L.picks.set(code, (L.picks.get(code) ?? 0) + 1);
   L.q = '';
@@ -140,6 +141,7 @@ export function initLabels() {
       if (isCode(q)) { addEan(q); return; }
       const found = searchArticles(db(), depot().id, { q, sort: 'name' });
       if (found.length === 1) addEan(found[0].article.ean);
+      else if (!found.length) { feedback('error'); toast('Aucune pièce trouvée.', { tone: 'error' }); }
     },
     'labels.camera': () => openCamera({ title: 'Scanner des pièces', onCode: (code) => { addEan(code); return true; } }),
     'labels.add': (el) => addEan(el.dataset.ean),
@@ -156,7 +158,7 @@ export function initLabels() {
       const job = jobList();
       const p = printerProfile();
       if (p.output === 'zpl') {
-        download(`etiquettes-${new Date().toISOString().slice(0, 10)}.zpl`, toZpl(job, { format: p.format, dpi: p.dpi }), 'text/plain');
+        download(`etiquettes-${localDay()}.zpl`, toZpl(job, { format: p.format, dpi: p.dpi }), 'text/plain');
         toast('Fichier ZPL téléchargé : envoyez-le à l\'imprimante (outil du fabricant, partage réseau ou USB).', { tone: 'ok', ms: 7000 });
         return;
       }

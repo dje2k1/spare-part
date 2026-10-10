@@ -40,7 +40,7 @@ function render() {
       ${kpi({ label: 'Références', value: fmtInt(k.refs) })}
       ${kpi({ label: 'Alertes', value: fmtInt(k.alerts), tone: k.alerts ? 'red' : 'green', sub: `${plural(k.zeros, 'épuisé')}`, action: 'dash.alerts' })}
       ${kpi({ label: 'Valeur du stock', value: k.value ? fmtEur(k.value) : '—', tone: 'blue' })}
-      ${kpi({ label: 'Taux de service', value: `${k.serviceRate} %`, tone: k.serviceRate < 80 ? 'red' : k.serviceRate < 95 ? 'amber' : 'green' })}
+      ${kpi({ label: 'Stock sain', value: `${k.serviceRate} %`, sub: 'pièces suivies au-dessus du seuil', tone: k.serviceRate < 80 ? 'red' : k.serviceRate < 95 ? 'amber' : 'green' })}
       ${kpi({ label: `Entrées ${D.days} j`, value: `+${fmtInt(k.ins)}`, tone: 'green' })}
       ${kpi({ label: `Sorties ${D.days} j`, value: `−${fmtInt(k.outs)}`, tone: 'red' })}
     </div>

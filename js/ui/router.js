@@ -34,6 +34,14 @@ export function navigate(path, { params, replace = false } = {}) {
   render();
 }
 
+/** Annonce l'écran affiché aux lecteurs d'écran (la page ne se recharge pas : rien ne le signalerait sinon). */
+function announce(text) {
+  const el = $('#route-announcer');
+  if (!el) return;
+  el.textContent = '';
+  requestAnimationFrame(() => { el.textContent = text; });
+}
+
 function paintChrome(def, r) {
   const title = typeof def.title === 'function' ? def.title(r) : def.title;
   const top = $('#topbar-title');
@@ -77,7 +85,7 @@ function renderNow({ keepScroll }) {
   const root = $('#view');
   const y = window.scrollY;
   const arriving = !(keepScroll && sameRoute);
-  if (arriving) markEntering(root);
+  if (arriving) { markEntering(root); announce(def.brand ? 'Accueil' : (typeof def.title === 'function' ? def.title(r) : def.title)); }
   setHtml(root, def.render(r));
   def.mount?.(root, r);
   document.body.classList.toggle('no-tabbar', def.nav === null);

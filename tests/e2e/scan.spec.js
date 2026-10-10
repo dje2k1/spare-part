@@ -1,4 +1,4 @@
-import { test, expect, loginDemo, db, toastText, stockedArticle } from './helpers.js';
+import { test, expect, loginDemo, login, db, toastText, stockedArticle } from './helpers.js';
 import { KEYS } from '../../js/core/config.js';
 
 const stockOf = (data, depotName, ean) => {
@@ -44,7 +44,7 @@ test.describe('scan continu', () => {
     expect(stockOf(await db(page), 'Paris', ean)).toBe(was);
   });
 
-  test('sortie supérieure au stock : refusée avec message clair, rien ne change', async ({ page }) => {
+  test('sortie supérieure au stock : signalée avant validation, rien ne change', async ({ page }) => {
     const data = await db(page);
     const ean = eanByName(data, 'Bouton nacre');
     const was = stockOf(data, 'Paris', ean);
@@ -52,10 +52,33 @@ test.describe('scan continu', () => {
     await page.locator('#scan-q').fill(ean);
     await page.locator('#scan-q').press('Enter');
     await page.locator('[name=qty]').fill(String(was + 1));
-    await page.locator('.scan-card__go').click();
-    await expect(toastText(page)).toContainText('Stock insuffisant');
+    await expect(page.locator('#scan-over')).toContainText('Stock insuffisant');
+    await expect(page.locator('.scan-card__go')).toBeDisabled();
     expect(stockOf(await db(page), 'Paris', ean)).toBe(was);
     await expect(page.locator('.scan-card')).toBeVisible(); // la fiche reste ouverte pour corriger
+  });
+
+  test('stock consommé entre-temps dans un autre onglet : refus avec message clair, rien ne change', async ({ page }) => {
+    const data = await db(page);
+    const art = stockedArticle(data, 'Paris', 2);
+    const was = stockOf(data, 'Paris', art.ean);
+    await page.goto('./#/scan/out');
+    await page.locator('#scan-q').fill(art.ean);
+    await page.locator('#scan-q').press('Enter');
+    await page.getByRole('button', { name: `Tout (${was})` }).click();
+    // Un second onglet sort une pièce pendant que la fiche est ouverte
+    const other = await page.context().newPage();
+    await login(other, { name: 'Sophie Martin', pin: '2345', depot: 'Paris' });
+    await other.evaluate((h) => { location.hash = h; }, '#/scan/out');
+    await other.locator('#scan-q').fill(art.ean);
+    await other.locator('#scan-q').press('Enter');
+    await other.locator('.scan-card__go').click();
+    await expect(other.locator('.toast__text').last()).toContainText(`−1 × ${art.name}`);
+    await other.close();
+    await page.locator('.scan-card__go').click();
+    await expect(toastText(page)).toContainText('Stock insuffisant');
+    expect(stockOf(await db(page), 'Paris', art.ean)).toBe(was - 1);
+    await expect(page.locator('.scan-card')).toBeVisible();
   });
 
   test('pièce inconnue : création avec l\'entrée (nom, famille, rangement)', async ({ page }) => {

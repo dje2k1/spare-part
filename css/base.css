@@ -67,6 +67,7 @@ table { border-collapse: collapse; width: 100%; }
 .flex--wrap { flex-wrap: wrap; }
 .grow { flex: 1; min-width: 0; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
 .right { text-align: right; }
 .center { text-align: center; }
 

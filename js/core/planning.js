@@ -1,11 +1,10 @@
 // Planification (lecture seule) : seuils intelligents, prévisions de rupture, commandes, briefing du jour,
 // rapport hebdomadaire. Fonctions pures (db, paramètres, now) → données.
-import { stockOf, levelOf, incomingQty, reorderList, articleLocations, isLow } from './queries.js';
+import { stockOf, levelOf, incomingIndex, reorderList, articleLocations, isLow } from './queries.js';
 import { weekOf, centralDepot } from './ops-kit.js';
-import { matches } from '../lib/text.js';
+import { matches, natCompare as nat } from '../lib/text.js';
 
 const DAY = 86_400_000;
-const nat = (a, b) => String(a).localeCompare(String(b), 'fr', { numeric: true, sensitivity: 'base' });
 const days = (a, b) => (new Date(b).getTime() - new Date(a).getTime()) / DAY;
 
 export const orderLabel = (o) => `${o.kind === 'supplier' ? 'ACH' : 'CMD'} ${o.no || '—'}`;
@@ -53,10 +52,14 @@ export function measuredLeadDays(db, depotId) {
   return Math.round((done.reduce((s, o) => s + days(o.submittedAt, o.receivedAt), 0) / done.length) * 10) / 10;
 }
 
-export function leadDaysFor(db, depot, article) {
+/**
+ * Délai de réapprovisionnement d'un article dans un dépôt (jours). `measured` : délai mesuré de l'atelier
+ * déjà calculé (undefined = à calculer) — évite de relire toutes les commandes pour chaque article.
+ */
+export function leadDaysFor(db, depot, article, measured) {
   const s = db.meta.settings;
   if (depot.kind === 'central') return db.suppliers[article.supplierId]?.leadDays ?? s.leadDaysSupplier;
-  return measuredLeadDays(db, depot.id) ?? s.leadDaysInternal;
+  return (measured === undefined ? measuredLeadDays(db, depot.id) : measured) ?? s.leadDaysInternal;
 }
 
 const roundPack = (n, pack) => (pack > 1 ? Math.ceil(n / pack) * pack : n);
@@ -65,12 +68,13 @@ const roundPack = (n, pack) => (pack > 1 ? Math.ceil(n / pack) * pack : n);
  * Seuils proposés : point de commande = consommation pendant le délai + stock de sécurité
  * (z × écart-type journalier × √délai, z selon le niveau de service) ; maximum = point de commande
  * + N jours de couverture (réglage), arrondi au conditionnement. null si aucune consommation observée.
+ * `measured` : voir leadDaysFor.
  */
-export function proposeLevel(db, depot, article, now = new Date()) {
+export function proposeLevel(db, depot, article, now = new Date(), { measured } = {}) {
   const st = usageStats(db, depot.id, article.ean, now);
   if (st.confidence === 'none') return null;
   const s = db.meta.settings;
-  const lead = leadDaysFor(db, depot, article);
+  const lead = leadDaysFor(db, depot, article, measured);
   const cover = depot.kind === 'central' ? s.coverDaysCentral : s.coverDaysAtelier;
   const safety = zFor(s.serviceLevel) * st.sdDaily * Math.sqrt(Math.max(1, lead));
   const min = Math.max(1, Math.ceil(st.avgDaily * lead + safety));
@@ -88,9 +92,12 @@ export function levelProposals(db, depotId, now = new Date(), { changedOnly = fa
   const depot = db.depots[depotId];
   if (!depot) return [];
   const rows = [];
+  const measured = depot.kind === 'central' ? null : measuredLeadDays(db, depot.id);
+  const used = db.usage?.[depotId] ?? {};
   for (const article of Object.values(db.articles)) {
+    if (!used[article.ean]) continue; // jamais consommé ici : aucune proposition (voir proposeLevel)
     if (q && !matches(q, article.name, article.ean, article.family, article.ref)) continue;
-    const proposed = proposeLevel(db, depot, article, now);
+    const proposed = proposeLevel(db, depot, article, now, { measured });
     if (!proposed) continue;
     const current = levelOf(db, depotId, article);
     const qty = stockOf(db, depotId, article.ean);
@@ -105,11 +112,14 @@ export function levelProposals(db, depotId, now = new Date(), { changedOnly = fa
 /** Ruptures prévues sous `horizon` jours (en comptant ce qui est déjà en route). */
 export function stockoutForecast(db, depotId, now = new Date(), { horizon = 7 } = {}) {
   const out = [];
+  const route = incomingIndex(db, depotId);
+  const used = db.usage?.[depotId] ?? {};
   for (const a of Object.values(db.articles)) {
+    if (!used[a.ean]) continue; // aucune consommation enregistrée : pas de prévision
     const { avgDaily } = usageStats(db, depotId, a.ean, now);
     if (avgDaily <= 0) continue;
     const qty = stockOf(db, depotId, a.ean);
-    const incoming = incomingQty(db, depotId, a.ean);
+    const incoming = route.get(a.ean) ?? 0;
     const left = daysLeft(qty + incoming, avgDaily);
     if (left < horizon) out.push({ article: a, qty, incoming, avgDaily, daysLeft: left, date: new Date(new Date(now).getTime() + left * DAY) });
   }
@@ -197,8 +207,11 @@ export function briefing(db, { depotId, role, now = new Date() }) {
     const oldest = q.toPrepare[0];
     add({ key: 'prepare', tone: 'info', icon: 'box', to: 'orders', count: q.toPrepare.length, title: `${q.toPrepare.length} commande${q.toPrepare.length > 1 ? 's' : ''} à préparer`, text: oldest ? `La plus ancienne : ${db.depots[oldest.depotId]?.name ?? '—'}, il y a ${ago(oldest.submittedAt)} j` : '' });
     add({ key: 'picking', tone: 'info', icon: 'clipboard', to: 'orders', count: q.picking.length, title: `${q.picking.length} en préparation`, text: [...new Set(q.picking.map((o) => o.pickedBy))].join(', ') });
-    const shortages = q.toPrepare.concat(q.picking).flatMap((o) => o.lines.filter((l) => stockOf(db, depot.id, l.ean) < l.qty));
-    add({ key: 'shortage', tone: 'low', icon: 'alert', to: 'orders', count: new Set(shortages.map((l) => l.ean)).size, title: `${new Set(shortages.map((l) => l.ean)).size} pièce(s) manquante(s) pour servir les ateliers`, text: 'Commandes impossibles à servir en totalité' });
+    // Demande cumulée de toutes les commandes à servir : deux commandes de 5 face à un stock de 8 = pièce manquante
+    const need = new Map();
+    for (const o of q.toPrepare.concat(q.picking)) for (const l of o.lines) need.set(l.ean, (need.get(l.ean) ?? 0) + l.qty);
+    const short = [...need].filter(([ean, n]) => stockOf(db, depot.id, ean) < n).length;
+    add({ key: 'shortage', tone: 'low', icon: 'alert', to: 'orders', count: short, title: `${short} pièce(s) manquante(s) pour servir les ateliers`, text: 'Demande des commandes en attente supérieure au stock' });
     if (manager) {
       const p = purchaseOverview(db, depot.id, now);
       add({ key: 'late', tone: 'low', icon: 'clock', to: 'purchases', count: p.late.length, title: `${p.late.length} commande(s) fournisseur en retard`, text: p.late.slice(0, 2).map((o) => db.suppliers[o.supplierId]?.name).join(', ') });

@@ -319,3 +319,64 @@ test('installation vide : un dépôt, un administrateur, PIN haché', async () =
   assert.ok(!JSON.stringify(db).includes('860214'));
   assert.doesNotThrow(() => normalizeDb(JSON.parse(JSON.stringify(db)), NOW));
 });
+
+test('indicateurs : livraisons reçues = entrées, expéditions = sorties ; annulations et transferts annulés exclus', async () => {
+  const o = await import('../../js/core/ops-orders.js');
+  const { orgDb, ORG } = await import('./helpers.js');
+  const db = orgDb();
+  const julie = ctxFor(db, 'opParis');
+  const { orderId } = o.setDraftLines(db, julie, { lines: [{ ean: EAN.zip, qty: 30 }] });
+  o.submitOrder(db, julie, { id: orderId });
+  const lea = ctxFor(db, 'lea');
+  o.claimOrder(db, lea, { id: orderId });
+  o.shipOrder(db, lea, { id: orderId, lines: [{ ean: EAN.zip, qty: 30 }] });
+  o.receiveOrder(db, julie, { id: orderId, lines: [{ ean: EAN.zip, qty: 30 }] });
+  const atelier = q.kpis(db, IDS.paris, { days: 7, now: NOW });
+  assert.equal(atelier.ins, 30, 'la livraison de l\'entrepôt est une entrée de l\'atelier');
+  assert.equal(q.kpis(db, ORG.central, { days: 7, now: NOW }).outs, 30, 'l\'expédition est une sortie de l\'entrepôt');
+  assert.equal(q.flow(db, IDS.paris, { days: 7, now: NOW }).at(-1).ins, 30);
+  // Une sortie annulée et son annulation ne comptent pas ; un transfert annulé et son retour non plus
+  const r = ops.moveStock(db, julie, { type: 'out', ean: EAN.zip, qty: 4 });
+  ops.undoMovement(db, julie, { historyId: r.historyId });
+  const t = ops.createTransfer(db, julie, { ean: EAN.zip, qty: 2, toDepotId: IDS.lyon });
+  ops.cancelTransfer(db, julie, { id: t.transferId });
+  const after = q.kpis(db, IDS.paris, { days: 7, now: NOW });
+  assert.deepEqual([after.ins, after.outs], [30, 0]);
+  assert.deepEqual(q.operatorStats(db, IDS.paris, { days: 7, now: NOW }).find((x) => x.name === 'Julie Laurent'), { name: 'Julie Laurent', moves: 5, ins: 30, outs: 0 });
+  const kept = ops.createTransfer(db, julie, { ean: EAN.zip, qty: 3, toDepotId: IDS.lyon });
+  assert.equal(q.kpis(db, IDS.paris, { days: 7, now: NOW }).outs, 3, 'un transfert en cours est une sortie');
+  ops.receiveTransfer(db, ctxFor(db, 'opLyon'), { id: kept.transferId });
+  assert.equal(q.kpis(db, IDS.lyon, { days: 7, now: NOW }).ins, 3, '… et une entrée pour le destinataire');
+});
+
+test('codes lus : écriture équivalente retrouvée (UPC-A → EAN-13), sinon null', () => {
+  const db = smallDb();
+  db.articles['0036000291452'] = { ...db.articles[EAN.zip], ean: '0036000291452', name: 'Pièce UPC', locations: {} };
+  assert.equal(q.resolveEan(db, '036000291452'), '0036000291452', 'UPC-A sur 12 chiffres');
+  assert.equal(q.resolveEan(db, '00036000291452'), '0036000291452', 'GTIN-14');
+  assert.equal(q.resolveEan(db, EAN.zip), EAN.zip, 'code exact');
+  assert.equal(q.resolveEan(db, ` ${EAN.zip} `), EAN.zip);
+  assert.equal(q.resolveEan(db, '96385074'), null);
+  assert.equal(q.resolveEan(db, 'pas un code'), null);
+  assert.equal(q.resolveEan(db, '__proto__'), null);
+});
+
+test('quantités en route : index unique = calcul article par article', async () => {
+  const o = await import('../../js/core/ops-orders.js');
+  const { orgDb, ORG } = await import('./helpers.js');
+  const db = orgDb();
+  const julie = ctxFor(db, 'opParis');
+  const a = o.setDraftLines(db, julie, { lines: [{ ean: EAN.zip, qty: 10 }, { ean: EAN.button, qty: 4 }] });
+  o.submitOrder(db, julie, { id: a.orderId });
+  o.setDraftLines(db, julie, { lines: [{ ean: EAN.zip, qty: 7 }] }); // nouveau panier (brouillon)
+  const karim = ctxFor(db, 'karim');
+  const p = o.savePurchaseDraft(db, karim, { supplierId: ORG.ykk, lines: [{ ean: EAN.clasp, qty: 50 }] });
+  o.sendPurchase(db, karim, { id: p.orderId });
+  for (const [depotId, withDraft] of [[IDS.paris, false], [IDS.paris, true], [ORG.central, false]]) {
+    const index = q.incomingIndex(db, depotId, { withDraft });
+    for (const ean of Object.keys(db.articles)) assert.equal(index.get(ean) ?? 0, q.incomingQty(db, depotId, ean, { withDraft }), `${depotId} ${ean} ${withDraft}`);
+  }
+  assert.equal(q.incomingQty(db, IDS.paris, EAN.zip), 10);
+  assert.equal(q.incomingQty(db, IDS.paris, EAN.zip, { withDraft: true }), 17);
+  assert.equal(q.incomingQty(db, ORG.central, EAN.clasp), 50);
+});

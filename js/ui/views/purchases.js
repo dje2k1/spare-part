@@ -6,7 +6,7 @@ import { stringify } from '../../lib/csv.js';
 import { isCode } from '../../lib/ean.js';
 import { icon, actions, $, setHtml, val, download } from '../dom.js';
 import { db, depot, can, run } from '../state.js';
-import { stockOf, searchArticles } from '../../core/queries.js';
+import { stockOf, searchArticles, resolveEan } from '../../core/queries.js';
 import { purchaseOverview, purchaseSuggestions, orderLabel, orderUnits } from '../../core/planning.js';
 import { savePurchaseDraft, deletePurchaseDraft, sendPurchase, closePurchase, saveSupplier, deleteSupplier } from '../../core/ops-orders.js';
 import { pageHead, segmented, emptyState } from '../components.js';
@@ -15,10 +15,11 @@ import { printDocument } from '../print.js';
 import { navigate, refresh } from '../router.js';
 import { toast } from '../toast.js';
 import { feedback } from '../feedback.js';
-import { codeBar } from '../codebar.js';
+import { codeBar, listenWedge } from '../codebar.js';
 import { statusPill } from './orders.js';
 
 const PU = { tab: null, q: '' };
+let stopWedge = null;
 const supplierOf = (o) => db().suppliers[o.supplierId];
 const total = (o) => o.lines.reduce((s, l) => s + l.qty * (l.price ?? 0), 0);
 
@@ -99,7 +100,12 @@ function renderOne(r) {
   </section>`;
 }
 
-export const purchaseRoute = { title: 'Commande fournisseur', back: true, perm: 'order.receive', render: renderOne };
+export const purchaseRoute = {
+  title: 'Commande fournisseur', back: true, perm: 'order.receive', render: renderOne,
+  // Brouillon : la douchette ajoute directement la pièce scannée
+  mount() { stopWedge?.(); stopWedge = current()?.status === 'draft' && can('purchase.manage') ? listenWedge((code) => addToPo(code)) : null; },
+  unmount() { stopWedge?.(); stopWedge = null; },
+};
 
 // ── Fournisseurs ──
 function renderSuppliers() {
@@ -168,9 +174,10 @@ function saveLines(o, lines) {
   run(savePurchaseDraft, { id: o.id, supplierId: o.supplierId, lines: lines.filter((l) => l.qty > 0).map((l) => ({ ean: l.ean, qty: l.qty, price: l.price })) });
   refresh();
 }
-function addToPo(code) {
+function addToPo(scanned) {
   const o = current();
-  if (!o || !isCode(code) || !db().articles[code]) { feedback('error'); toast('Pièce inconnue du catalogue.', { tone: 'error' }); return; }
+  const code = resolveEan(db(), scanned);
+  if (!o || !code) { feedback('error'); toast('Pièce inconnue du catalogue.', { tone: 'error' }); return; }
   feedback('scan');
   const a = db().articles[code];
   const have = o.lines.find((l) => l.ean === code);
@@ -198,6 +205,7 @@ export function initPurchases() {
       if (isCode(q)) return addToPo(q);
       const found = searchArticles(db(), depot().id, { q, sort: 'name' });
       if (found.length === 1) addToPo(found[0].article.ean);
+      else if (!found.length) { feedback('error'); toast('Aucune pièce trouvée.', { tone: 'error' }); }
     },
     'pu.add': (el) => addToPo(el.dataset.ean),
     'pu.step'(el) {

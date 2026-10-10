@@ -5,7 +5,7 @@ import { html, fmtInt, fmtRelative, plural } from '../../lib/text.js';
 import { isCode } from '../../lib/ean.js';
 import { icon, actions, $, setHtml, val, whenReleased } from '../dom.js';
 import { db, depot, can, run } from '../state.js';
-import { articleLocations, locCode } from '../../core/queries.js';
+import { articleLocations, locCode, resolveEan } from '../../core/queries.js';
 import { orderLabel } from '../../core/planning.js';
 import { receiveOrder, receivePurchase } from '../../core/ops-orders.js';
 import { pageHead, emptyState, thumb } from '../components.js';
@@ -82,6 +82,7 @@ function onCode(code) {
   const o = order();
   if (!o) return false;
   if (!isCode(code)) { feedback('error'); toast('Code non reconnu.', { tone: 'error' }); return true; }
+  code = resolveEan(db(), code) ?? code;
   const l = lines(o).find((x) => x.ean === code);
   if (!l) { feedback('error'); toast(db().articles[code] ? `${db().articles[code].name} ne fait pas partie de cette livraison.` : `Code ${code} inconnu.`, { tone: 'error' }); return true; }
   feedback('scan');

@@ -3,7 +3,7 @@
 import { html, fmtInt, toInt } from '../../lib/text.js';
 import { icon, actions, $, setHtml } from '../dom.js';
 import { db, depot, can, run, state, storage, lockout } from '../state.js';
-import { searchArticles, locCode } from '../../core/queries.js';
+import { searchArticles, locCode, resolveEan } from '../../core/queries.js';
 import { commitInventory } from '../../core/ops.js';
 import { verifyPin } from '../../core/auth.js';
 import { KEYS, ROLES } from '../../core/config.js';
@@ -12,9 +12,11 @@ import { pinDialog, confirmDialog } from '../dialogs.js';
 import { navigate, refresh } from '../router.js';
 import { feedback } from '../feedback.js';
 import { toast } from '../toast.js';
+import { listenWedge, openCamera } from '../codebar.js';
 
 const I = { phase: 'setup', depotId: null, scope: 'all', blind: true, items: [], idx: 0, done: null };
 let sig = { drawing: false, has: false, ctx: null, last: null };
+let stopWedge = null;
 
 const saveDraft = () => { try { storage.setItem(KEYS.session, JSON.stringify({ depotId: I.depotId, scope: I.scope, blind: I.blind, items: I.items, idx: I.idx, userId: state.session.user.id })); } catch { /* quota */ } };
 const clearDraft = () => { try { storage.removeItem(KEYS.session); } catch { /* ignoré */ } };
@@ -38,7 +40,7 @@ function setupView() {
       <p class="muted">Les articles sont présentés un par un dans l'ordre de leurs emplacements. Saisissez la quantité réellement comptée.</p>
       <label class="field"><span class="field__label">Dépôt à inventorier</span><select class="select" name="depot" data-change="inv.depot">${depots.map((d) => html`<option value="${d.id}" ${d.id === (I.depotId || depot().id) ? 'selected' : ''}>${d.name}</option>`)}</select></label>
       <label class="field"><span class="field__label">Périmètre</span><select class="select" name="scope">
-        <option value="all">Tous les articles</option><option value="alert">Articles en alerte uniquement</option>
+        <option value="all">Tous les articles</option><option value="alert">Articles en alerte ou épuisés</option>
         ${racks(I.depotId || depot().id).map((r) => html`<option value="rack:${r}">Rack ${r}</option>`)}</select></label>
       <label class="check"><input type="checkbox" name="blind" ${I.blind ? 'checked' : ''}><span>Comptage à l'aveugle <span class="muted">(masquer le stock théorique)</span></span></label>
       <button type="submit" class="btn btn--primary btn--block">Démarrer l'inventaire</button>
@@ -62,7 +64,9 @@ function countView() {
         <div class="qty"><button type="button" class="qty__btn" data-action="inv.qty" data-delta="-1" aria-label="Moins un">${icon('minus')}</button>
           <input class="qty__input" id="inv-qty" type="number" inputmode="numeric" min="0" step="1" value="${it.real === null && I.blind ? '' : value}" placeholder="0" aria-label="Quantité comptée" data-input="inv.input">
           <button type="button" class="qty__btn" data-action="inv.qty" data-delta="1" aria-label="Plus un">${icon('plus')}</button></div>
-        <div class="presets">${[5, 10, 50].map((n) => html`<button type="button" class="chip" data-action="inv.qty" data-delta="${n}">+${n}</button>`)}</div></div>
+        <div class="presets">${[5, 10, 50].map((n) => html`<button type="button" class="chip" data-action="inv.qty" data-delta="${n}">+${n}</button>`)}
+          <button type="button" class="chip" data-action="inv.camera">${icon('camera', 'i--sm')}Compter au scan</button></div>
+        <p class="field__hint">Douchette ou caméra : chaque lecture de cette pièce ajoute 1 ; scanner une autre pièce de l'inventaire l'affiche.</p></div>
       ${it.real !== null && !I.blind && it.real !== it.sys ? html`<p class="${it.real < it.sys ? 'text-red' : 'text-green'}">Écart : ${it.real > it.sys ? '+' : ''}${fmtInt(it.real - it.sys)} unité(s)</p>` : ''}
     </article>
     <div class="inv-nav">
@@ -136,7 +140,33 @@ const signatureData = () => {
   return small.toDataURL('image/png');
 };
 
-export const inventoryRoute = { title: 'Inventaire', back: true, perm: 'inventory', refresh: 'none', render, mount: () => { I.phase = 'setup'; I.depotId = null; paint(); } };
+export const inventoryRoute = {
+  title: 'Inventaire', back: true, perm: 'inventory', refresh: 'none', render,
+  mount: () => { I.phase = 'setup'; I.depotId = null; paint(); stopWedge?.(); stopWedge = listenWedge(countByScan); },
+  unmount: () => { stopWedge?.(); stopWedge = null; },
+};
+
+/**
+ * Comptage au scan : la pièce affichée → +1 ; une autre pièce de l'inventaire → elle s'affiche et compte 1.
+ * @returns {boolean} true pour continuer la lecture (caméra)
+ */
+function countByScan(scanned) {
+  if (I.phase !== 'count') return true;
+  const ean = resolveEan(db(), scanned);
+  const idx = ean ? I.items.findIndex((i) => i.ean === ean) : -1;
+  if (idx < 0) {
+    feedback('error');
+    toast(ean ? `${db().articles[ean].name} ne fait pas partie de cet inventaire.` : `Code ${scanned} inconnu du catalogue.`, { tone: 'error' });
+    return true;
+  }
+  if (idx !== I.idx) { commit(); I.idx = idx; }
+  const it = I.items[I.idx];
+  it.real = (it.real ?? 0) + 1;
+  feedback('scan');
+  saveDraft();
+  paint();
+  return true;
+}
 
 function begin(depotId, scope, blind) {
   const rows = searchArticles(db(), depotId, { sort: 'loc' }).filter((r) => {
@@ -160,6 +190,7 @@ export function initInventory() {
     'inv.start'(form) { begin(form.elements.depot.value, form.elements.scope.value, form.elements.blind.checked); },
     'inv.resume': () => { const d = readDraft(); Object.assign(I, { phase: 'count', depotId: d.depotId, scope: d.scope, blind: d.blind, items: d.items, idx: Math.min(d.idx, d.items.length - 1) }); paint(); },
     async 'inv.discard'() { if (await confirmDialog({ title: 'Abandonner l\'inventaire en cours ?', message: 'Les quantités déjà comptées seront perdues.', confirmLabel: 'Abandonner', danger: true })) { clearDraft(); paint(); } },
+    'inv.camera': () => openCamera({ title: 'Comptage au scan', hint: 'Chaque lecture ajoute 1 à la pièce scannée', onCode: countByScan }),
     'inv.qty': (el) => { const cur = readQty() ?? (I.items[I.idx].real ?? 0); I.items[I.idx].real = Math.max(0, cur + Number(el.dataset.delta)); saveDraft(); paint(); },
     'inv.input': () => { const n = readQty(); I.items[I.idx].real = n; saveDraft(); },
     'inv.prev': () => { commit(); I.idx = Math.max(0, I.idx - 1); saveDraft(); paint(); },

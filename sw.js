@@ -4,7 +4,7 @@
 // l'utilisateur (bandeau « Mettre à jour ») au lieu d'être imposée en pleine saisie.
 //
 // ⚠ La liste PRECACHE est générée : `npm run sw` (vérifiée par tests/unit/pwa.test.js).
-const VERSION = '3.0.0';
+const VERSION = '3.1.0-350b4dbd';
 const CACHE = `mode-stock-${VERSION}`;
 
 // <PRECACHE>

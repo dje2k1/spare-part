@@ -404,6 +404,28 @@ test('import CSV : application réelle, quantités optionnelles et tracées', ()
   expectOpError(() => ops.importCatalogue(db, mgr, new Array(LIMITS.rows + 1).fill({ _line: 1 })), /volumineux/);
 });
 
+test('import CSV : l\'export « catalogue complet » se réimporte (conditionnement, fournisseur, réf. fournisseur)', async () => {
+  const { orgDb, ORG } = await import('./helpers.js');
+  const db = orgDb();
+  const karim = ctxFor(db, 'karim');
+  const text = [
+    'ean13;name;family;ref;price;threshold;pack;supplier;supplierRef;stock DEP-01',
+    `${EAN.clasp};Fermoir clip;Fermoirs;FRM;4,2;6;25;ykk france;YK-778;99`,
+    '40000011;Nouvelle pièce;Zips;;1;2;5;;;0',
+    '40000012;Fournisseur inconnu;Zips;;1;2;5;Inconnu SARL;;0',
+  ].join('\n');
+  const r = ops.importCatalogueText(db, karim, text, { applyStock: true });
+  assert.deepEqual([r.created, r.updated], [1, 1]);
+  assert.deepEqual(r.skipped.map((s) => s.reason), ['fournisseur « Inconnu SARL » inconnu (créez-le d\'abord)']);
+  const clasp = db.articles[EAN.clasp];
+  assert.deepEqual([clasp.pack, clasp.supplierId, clasp.supplierRef, clasp.threshold], [25, ORG.ykk, 'YK-778', 6], 'fournisseur retrouvé par son nom (sans tenir compte de la casse)');
+  assert.equal(db.articles['40000011'].pack, 5);
+  assert.equal(stockOf(db, ORG.central, EAN.clasp), 40, 'les colonnes « stock <dépôt> » de l\'export ne sont pas des quantités à appliquer');
+  // Colonnes absentes : fournisseur et référence conservés
+  ops.importCatalogueText(db, karim, `ean13;name\n${EAN.clasp};Fermoir clip renommé`);
+  assert.deepEqual([db.articles[EAN.clasp].name, db.articles[EAN.clasp].supplierId, db.articles[EAN.clasp].supplierRef], ['Fermoir clip renommé', ORG.ykk, 'YK-778']);
+});
+
 test('import de pièces suggérées par l\'IA : codes internes, EAN du modèle ignorés', () => {
   const db = smallDb();
   const mgr = ctxFor(db, 'mgrParis');

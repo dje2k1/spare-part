@@ -1,7 +1,7 @@
 // « Votre journée » : à la première ouverture du jour, une feuille récapitule ce qui demande une action
 // (livraisons à réceptionner, commandes à préparer, ruptures prévues, seuils à revoir…). Désactivable
 // pour toute l'organisation (Administration → Données) ; rouvrable depuis l'accueil.
-import { html, fmtLongDate } from '../lib/text.js';
+import { html, fmtLongDate, localDay } from '../lib/text.js';
 import { icon, actions } from './dom.js';
 import { state, db, depot, storage } from './state.js';
 import { briefing } from '../core/planning.js';
@@ -9,7 +9,7 @@ import { KEYS } from '../core/config.js';
 import { openSheet, closeSheet } from './dialogs.js';
 import { navigate } from './router.js';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDay(); // jour local : « une fois par jour » suit l'horloge de l'atelier, pas UTC
 const seenKey = () => `${state.session.user.id}:${state.session.depotId}`;
 
 function readSeen() { try { return JSON.parse(storage.getItem(KEYS.briefing)) || {}; } catch { return {}; } }

@@ -17,7 +17,7 @@
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, brotliCompressSync, constants as zlib } from 'node:zlib';
 import { createSyncStore } from './sync-store.js';
 import { createAuth } from './auth.js';
 import { createAiProxy } from './ai.js';
@@ -273,6 +273,26 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
   }
 
   // ── Fichiers de l'application ──
+  // Contenu (et versions compressées) gardé en mémoire tant que le fichier ne change pas : l'application pèse
+  // quelques centaines de Ko, divisés par 3 à 4 en Brotli — installation et mises à jour plus rapides en 4G.
+  const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.json', '.webmanifest', '.svg']);
+  const files = new Map(); // chemin → { etag, body, br, gz }
+  async function staticEntry(file, etag, page) {
+    const hit = files.get(file);
+    if (hit?.etag === etag) return hit;
+    let body = await readFile(file);
+    // La page annonce le mode serveur (lu au démarrage, y compris hors ligne depuis le cache du service worker)
+    if (page) body = Buffer.from(body.toString('utf8').replace('<meta name="mode-sync" content="static">', '<meta name="mode-sync" content="server">'));
+    const zip = COMPRESSIBLE.has(extname(file)) && body.length > 1024;
+    const entry = {
+      etag, body,
+      br: zip ? brotliCompressSync(body, { params: { [zlib.BROTLI_PARAM_QUALITY]: 9, [zlib.BROTLI_PARAM_SIZE_HINT]: body.length } }) : null,
+      gz: zip ? gzipSync(body, { level: 9 }) : null,
+    };
+    files.set(file, entry);
+    return entry;
+  }
+
   async function serveStatic(req, res, url) {
     let rel;
     try { rel = decodeURIComponent(url.pathname).replace(/^\/+/, ''); } catch { rel = '\u0000'; }
@@ -291,10 +311,13 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
     const etag = `W/"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}${page ? '-s' : ''}"`;
     const h = { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: etag };
     if (rel === 'sw.js') h['Service-Worker-Allowed'] = '/';
+    const entry = await staticEntry(file, etag, page);
+    if (entry.br) h.Vary = 'Accept-Encoding';
     if (header(req, 'if-none-match') === etag) { res.writeHead(304, h); return res.end(); }
-    let body = await readFile(file);
-    // La page annonce le mode serveur (lu au démarrage, y compris hors ligne depuis le cache du service worker)
-    if (page) body = Buffer.from(body.toString('utf8').replace('<meta name="mode-sync" content="static">', '<meta name="mode-sync" content="server">'));
+    const accept = header(req, 'accept-encoding') ?? '';
+    let body = entry.body;
+    if (entry.br && /\bbr\b/.test(accept)) { body = entry.br; h['Content-Encoding'] = 'br'; }
+    else if (entry.gz && /\bgzip\b/.test(accept)) { body = entry.gz; h['Content-Encoding'] = 'gzip'; }
     h['Content-Length'] = body.length;
     res.writeHead(200, h);
     res.end(req.method === 'HEAD' ? undefined : body);

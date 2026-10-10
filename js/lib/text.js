@@ -42,13 +42,30 @@ export const fold = (s) =>
     .replace(/æ/g, 'ae')
     .trim();
 
+// Texte replié mis en cache : une recherche parcourt des milliers de fiches à chaque frappe, et
+// `normalize` coûte cher. Les mêmes textes (désignations, codes) reviennent d'une frappe à l'autre.
+const folded = new Map();
+function foldCached(s) {
+  let f = folded.get(s);
+  if (f === undefined) {
+    if (folded.size > 50_000) folded.clear();
+    f = fold(s);
+    folded.set(s, f);
+  }
+  return f;
+}
+
 /** Tous les mots de la requête doivent apparaître (insensible casse/accents). */
 export function matches(query, ...fields) {
   const tokens = fold(query).split(/\s+/).filter(Boolean);
   if (!tokens.length) return true;
-  const hay = fold(fields.join(' '));
+  const hay = foldCached(fields.join(' '));
   return tokens.every((t) => hay.includes(t));
 }
+
+/** Tri « naturel » français (R2 avant R10, sans tenir compte des accents ni de la casse). */
+const collator = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
+export const natCompare = (a, b) => collator.compare(String(a ?? ''), String(b ?? ''));
 
 /** Entier strict : `"3"`, `3`, `" 12 "` → nombre ; `"3.5"`, `"1e3"`, `""`, `NaN` → NaN. */
 export function toInt(v) {
@@ -100,6 +117,15 @@ export function fmtRelative(v, now = new Date()) {
   if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
   if (s < 86400 * 7) return `il y a ${Math.floor(s / 86400)} j`;
   return dFmt.format(d);
+}
+
+/**
+ * Jour LOCAL au format AAAA-MM-JJ (noms de fichiers, « une fois par jour »). `toISOString()` donnerait le
+ * jour UTC : entre minuit et 2 h en France, ce serait encore la veille.
+ */
+export function localDay(v = new Date()) {
+  const d = asDate(v);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** Initiales pour un avatar : « Sophie Martin » → « SM ». */

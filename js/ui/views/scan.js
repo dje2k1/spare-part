@@ -1,21 +1,23 @@
 // Scan continu : entrée / sortie / transfert sans quitter l'écran.
 // Flux : caméra (ou saisie, ou douchette) → fiche de la pièce → quantité → Valider → l'écran se réarme
 // pour la pièce suivante. Chaque opération offre « Annuler » pendant quelques secondes.
-import { html, fmtInt, toInt } from '../../lib/text.js';
+import { html, fmtInt, toInt, fmtRelative } from '../../lib/text.js';
 import { isCode, hasValidCheck, nextInternalEan } from '../../lib/ean.js';
 import { parseLocationPayload } from '../../lib/qr.js';
 import { icon, actions, $, setHtml, val } from '../dom.js';
 import { db, depot, can, run, prefs } from '../state.js';
 import { moveStock, createTransfer, undoMovement, cancelTransfer } from '../../core/ops.js';
-import { searchArticles, stockOf, articleLocations, locCode, families, depotLocationCodes, levelOf, stockStatus } from '../../core/queries.js';
-import { REASONS } from '../../core/config.js';
+import { searchArticles, stockOf, articleLocations, locCode, families, depotLocationCodes, levelOf, stockStatus, resolveEan } from '../../core/queries.js';
+import { REASONS, LIMITS } from '../../core/config.js';
 import { thumb, statusPill, segmented, articleRow } from '../components.js';
 import { createScanner, scannerAvailable, cameraErrorMessage, decodePhoto } from '../scanner.js';
+import { openSheet, isSheetOpen } from '../dialogs.js';
 import { feedback } from '../feedback.js';
 import { toast } from '../toast.js';
 import { touch } from '../session.js';
 import { replaceHash, navigate } from '../router.js';
 import { openArticle } from './article-sheet.js';
+import { listenWedge } from '../codebar.js';
 import { setAccent, SCAN_FAMILY } from '../look.js';
 
 // « find » : consultation (la fiche de la pièce s'ouvre), depuis la barre de recherche de l'accueil.
@@ -25,10 +27,10 @@ const PRESETS = [5, 10, 25];
 
 const goLabel = (known = true) => (known ? `${VERBS[S.mode]} (${S.mode === 'in' ? '+' : '−'}${fmtInt(S.qty)})` : `Créer et recevoir (+${fmtInt(S.qty)})`);
 
-const S = { mode: 'in', ean: null, qty: 1, reason: '', toDepotId: '', loc: '', draft: { name: '', family: '', threshold: '' }, recap: { count: 0, in: 0, out: 0 }, suggest: [], query: '', cam: 'idle', camError: '', torch: false };
+// `done` : opérations de la session de scan (récapitulatif, annulation possible après la disparition du toast)
+const S = { mode: 'in', ean: null, qty: 1, reason: '', toDepotId: '', loc: '', draft: { name: '', family: '', threshold: '' }, done: [], suggest: [], query: '', cam: 'idle', camError: '', torch: false };
 let scanner = null;
-let keyBuf = { text: '', at: 0 };
-let keyHandler = null;
+let stopWedge = null;
 let searchTimer = null;
 
 const otherDepots = () => Object.values(db().depots).filter((d) => d.id !== depot().id);
@@ -51,7 +53,7 @@ function render(r) {
       </div>
       <div class="scan__find">
         <form class="input-group" data-submit="scan.find" role="search">
-          <input class="input input--mono" name="q" id="scan-q" type="text" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Code-barres ou nom de la pièce" aria-label="Code-barres ou nom de la pièce" data-input="scan.search">
+          <input class="input input--mono" name="q" id="scan-q" type="text" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Code-barres ou nom de la pièce" aria-label="Code-barres ou nom de la pièce" data-scan-target data-input="scan.search">
           <button type="submit" class="btn btn--primary btn--icon" aria-label="Rechercher">${icon('search')}</button>
         </form>
         <label class="btn btn--ghost btn--sm scan__photo" for="scan-photo">${icon('camera', 'i--sm')}Lire un code sur une photo</label>
@@ -115,13 +117,53 @@ function paintSuggest() {
   </div>`);
 }
 
+/** Totaux de la session (opérations annulées exclues). */
+function recap() {
+  const live = S.done.filter((e) => !e.undone);
+  return { count: live.length, in: live.filter((e) => e.sign > 0).reduce((n, e) => n + e.units, 0), out: live.filter((e) => e.sign < 0).reduce((n, e) => n + e.units, 0) };
+}
+
 function paintRecap() {
   const host = $('#scan-recap');
   if (!host) return;
-  const r = S.recap;
-  if (!r.count) { setHtml(host, html``); return; }
-  setHtml(host, html`<div class="recap"><span>${icon('check', 'i--sm')} <strong>${r.count}</strong> opération${r.count > 1 ? 's' : ''} · <span class="recap__in">+${fmtInt(r.in)}</span> / <span class="recap__out">−${fmtInt(r.out)}</span></span>
+  const r = recap();
+  if (!S.done.length) { setHtml(host, html``); return; }
+  setHtml(host, html`<div class="recap"><button type="button" class="recap__sum" data-action="scan.history" aria-label="Voir les opérations de la session">${icon('check', 'i--sm')} <strong>${r.count}</strong> opération${r.count > 1 ? 's' : ''} · <span class="recap__in">+${fmtInt(r.in)}</span> / <span class="recap__out">−${fmtInt(r.out)}</span></button>
+    <button type="button" class="btn btn--text" data-action="scan.history">Voir</button>
     <button type="button" class="btn btn--text" data-action="scan.done">Terminer</button></div>`);
+}
+
+/** Une opération de la session peut-elle encore être annulée ? (transfert : tant qu'il n'est pas reçu) */
+function canUndo(e) {
+  if (e.undone) return false;
+  if (e.kind === 'transfer') return db().transfers[e.ref]?.status === 'pending';
+  return Date.now() - e.at < LIMITS.undoWindowMs;
+}
+
+function undoEntry(e) {
+  try {
+    e.undo();
+    e.undone = true;
+    feedback('ok');
+    toast('Opération annulée.');
+  } catch (err) {
+    if (!err?.isOpError) throw err;
+    toast(err.message, { tone: 'error' });
+  }
+  paintRecap();
+  if (isSheetOpen() && document.getElementById('scan-history')) openHistory();
+}
+
+function openHistory() {
+  const list = [...S.done].reverse();
+  openSheet({
+    title: 'Opérations de la session',
+    body: html`<p class="muted">Annulation possible pendant ${LIMITS.undoWindowMs / 60_000} minutes (un transfert : tant qu'il n'est pas reçu). Au-delà, un responsable corrige le stock depuis la fiche de la pièce.</p>
+      <ul class="list" id="scan-history">${list.map((e) => html`<li class="row row--compact ${e.undone ? 'is-undone' : ''}">
+        <span class="row__bar row__bar--${e.kind === 'transfer' ? 'transfer' : e.sign > 0 ? 'in' : 'out'}" aria-hidden="true"></span>
+        <span class="row__body"><span class="row__title">${e.label}</span><span class="row__meta">${fmtRelative(e.at)}${e.undone ? ' · annulée' : ''}</span></span>
+        ${canUndo(e) ? html`<span class="row__trail"><button type="button" class="btn btn--secondary btn--sm" data-action="scan.undo" data-id="${e.id}">Annuler</button></span>` : ''}</li>`)}</ul>`,
+  });
 }
 
 function paintCard() {
@@ -136,12 +178,15 @@ const tips = () => html`<div class="scan__tips">
   <p>${icon('info', 'i--sm')} Visez un code-barres ou un QR : la fiche s'ouvre et la caméra se fige.</p>
   <p>${icon('search', 'i--sm')} Pas de code lisible ? Tapez le nom de la pièce ci-dessus.</p></div>`;
 
-function qtyBlock() {
+/** `avail` : stock disponible quand l'opération en retire (sortie, transfert) ; sinon null. */
+function qtyBlock(avail = null) {
+  const over = avail !== null && S.qty > avail;
   return html`<div class="field"><span class="field__label">Quantité</span>
     <div class="qty"><button type="button" class="qty__btn" data-action="scan.qty" data-delta="-1" aria-label="Moins un">${icon('minus')}</button>
-      <input class="qty__input" name="qty" type="number" inputmode="numeric" min="1" step="1" value="${S.qty}" aria-label="Quantité" data-input="scan.qty.input">
+      <input class="qty__input" name="qty" type="number" inputmode="numeric" min="1" ${avail !== null ? html`max="${Math.max(1, avail)}"` : ''} step="1" value="${S.qty}" aria-label="Quantité" ${avail !== null ? html`aria-describedby="scan-over"` : ''} data-input="scan.qty.input">
       <button type="button" class="qty__btn" data-action="scan.qty" data-delta="1" aria-label="Plus un">${icon('plus')}</button></div>
-    <div class="presets">${PRESETS.map((n) => html`<button type="button" class="chip" data-action="scan.qty" data-delta="${n}">+${n}</button>`)}</div></div>`;
+    <div class="presets">${PRESETS.map((n) => html`<button type="button" class="chip" data-action="scan.qty" data-delta="${n}">+${n}</button>`)}${avail > 1 ? html`<button type="button" class="chip" data-action="scan.qty.set" data-value="${avail}">Tout (${fmtInt(avail)})</button>` : ''}</div>
+    ${avail !== null ? html`<p class="field__error" id="scan-over" role="status" ${over ? '' : 'hidden'}>Stock insuffisant : ${fmtInt(avail)} disponible${avail > 1 ? 's' : ''} ici.</p>` : ''}</div>`;
 }
 
 function reasonChips() {
@@ -173,10 +218,10 @@ function knownCard(a) {
           <input class="input input--mono" id="scan-loc" name="loc" list="scan-locs" autocomplete="off" autocapitalize="characters" placeholder="R1-A2-E1" value="${S.loc || def}" data-input="scan.loc">
           <datalist id="scan-locs">${depotLocationCodes(db(), d.id).map((c) => html`<option value="${c}"></option>`)}</datalist>
           ${locs.length > 1 ? html`<div class="chips chips--wrap">${locs.map((l) => html`<button type="button" class="chip" data-action="scan.useloc" data-value="${locCode(l)}">${locCode(l)}</button>`)}</div>` : ''}</div>`}
-      ${qtyBlock()}
+      ${qtyBlock(S.mode === 'out' || S.mode === 'transfer' ? qty : null)}
       ${S.mode === 'transfer' ? html`<label class="field"><span class="field__label">Dépôt destinataire</span>
         <select class="select" name="to" data-change="scan.to">${otherDepots().map((x) => html`<option value="${x.id}" ${x.id === (S.toDepotId || otherDepots()[0]?.id) ? 'selected' : ''}>${x.name}</option>`)}</select></label>` : reasonChips()}
-      <button type="button" class="btn btn--${S.mode} btn--block scan-card__go" data-action="scan.confirm">${goLabel()}</button>
+      <button type="button" class="btn btn--${S.mode} btn--block scan-card__go" data-action="scan.confirm" ${(S.mode === 'out' || S.mode === 'transfer') && S.qty > qty ? 'disabled' : ''}>${goLabel()}</button>
     </article>`;
 }
 
@@ -216,6 +261,7 @@ function setMode(mode) {
 function pick(ean) {
   ean = String(ean ?? '').trim();
   if (!isCode(ean)) { toast('Code non reconnu.', { tone: 'error' }); feedback('error'); return; }
+  ean = resolveEan(db(), ean) ?? ean; // écriture équivalente d'une pièce connue (UPC-A lu, EAN-13 enregistré…)
   S.ean = ean; S.qty = 1; S.reason = ''; S.loc = ''; S.draft = { name: '', family: '', threshold: '' };
   S.query = ''; S.suggest = [];
   const input = $('#scan-q'); if (input) input.value = '';
@@ -275,12 +321,14 @@ function readCard() {
   };
 }
 
-function afterSuccess({ label, units, sign, undo }) {
+let seq = 0;
+function afterSuccess({ label, units, sign, undo, kind = 'move', ref = '' }) {
   feedback('ok');
-  S.recap.count++;
-  if (sign > 0) S.recap.in += units; else S.recap.out += units;
+  const entry = { id: `op${++seq}`, label, units, sign, undo, kind, ref, at: Date.now(), undone: false };
+  S.done.push(entry);
+  if (S.done.length > 100) S.done.shift();
   paintRecap();
-  toast(label, { tone: 'ok', action: { label: 'Annuler', run: () => { try { undo(); toast('Opération annulée.'); } catch (e) { toast(e.message, { tone: 'error' }); } } } });
+  toast(label, { tone: 'ok', action: { label: 'Annuler', run: () => undoEntry(entry) } });
   reset();
 }
 
@@ -293,22 +341,15 @@ export const scanRoute = {
     paintMode(); paintCamera(); paintSuggest(); paintCard(); paintRecap();
     const pre = r.params.get('ean');
     if (pre && isCode(pre)) pick(pre);
-    // Douchette (clavier) : une rafale de chiffres terminée par Entrée = un code lu
-    keyHandler = (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) return;
-      const now = performance.now();
-      if (now - keyBuf.at > 80) keyBuf.text = '';
-      keyBuf.at = now;
-      if (/^[0-9A-Za-z:-]$/.test(e.key)) keyBuf.text += e.key;
-      else if (e.key === 'Enter' && keyBuf.text.length >= 8) { const t = keyBuf.text; keyBuf.text = ''; onCode(t); }
-    };
-    document.addEventListener('keydown', keyHandler);
+    // Douchette (clavier) : une rafale terminée par Entrée = un code lu, y compris si le champ quantité a le focus
+    stopWedge?.();
+    stopWedge = listenWedge(onCode);
     // Caméra : démarrage automatique seulement si l'autorisation a déjà été accordée (pas de demande surprise)
     navigator.permissions?.query?.({ name: 'camera' }).then((p) => { if (p.state === 'granted' && S.cam === 'idle' && $('#scanner')) startCamera(); }).catch(() => {});
   },
   unmount() {
-    if (keyHandler) document.removeEventListener('keydown', keyHandler);
-    keyHandler = null;
+    stopWedge?.();
+    stopWedge = null;
     clearTimeout(searchTimer);
     scanner?.stop();
     scanner = null;
@@ -355,19 +396,30 @@ export function initScan() {
     },
     'scan.clear': () => reset(),
     'scan.qty': (el) => { S.qty = Math.max(1, (toInt($('#scan-card [name=qty]')?.value) || S.qty) + Number(el.dataset.delta)); paintCard(); },
+    'scan.qty.set': (el) => { S.qty = Math.max(1, toInt(el.dataset.value) || 1); paintCard(); },
     'scan.qty.input': (el) => {
       const n = toInt(el.value);
       if (Number.isNaN(n) || n < 1) return;
       S.qty = n;
       const go = $('#scan-card .scan-card__go');
       if (go) go.textContent = goLabel(Boolean(article()));
+      // Sortie ou transfert au-delà du stock : signalé tout de suite, validation bloquée
+      const max = Number(el.getAttribute('max'));
+      if (el.hasAttribute('max')) {
+        const over = n > max;
+        const warn = $('#scan-over');
+        if (warn) warn.hidden = !over;
+        if (go) go.disabled = over;
+      }
     },
+    'scan.history': () => openHistory(),
+    'scan.undo': (el) => { const e = S.done.find((x) => x.id === el.dataset.id); if (e) undoEntry(e); },
     'scan.reason': (el) => { S.reason = S.reason === el.dataset.value ? '' : el.dataset.value; paintCard(); },
     'scan.loc': (el) => { S.loc = el.value; },
     'scan.useloc': (el) => { S.loc = el.dataset.value; const i = $('#scan-loc'); if (i) i.value = S.loc; },
     'scan.draft': (el) => { S.draft[el.name] = el.value; },
     'scan.to': (el) => { S.toDepotId = el.value; },
-    'scan.done': () => { S.recap = { count: 0, in: 0, out: 0 }; navigate('home'); },
+    'scan.done': () => { S.done = []; navigate('home'); },
     'scan.confirm'(el) {
       const f = readCard();
       if (Number.isNaN(f.qty) || f.qty < 1) { toast('Quantité invalide : entier ≥ 1.', { tone: 'error' }); return; }
@@ -377,7 +429,7 @@ export function initScan() {
         if (S.mode === 'transfer') {
           const r = run(createTransfer, { ean: S.ean, qty: f.qty, toDepotId: f.to });
           const to = db().depots[f.to];
-          afterSuccess({ label: `${f.qty} × ${a.name} → ${to.name}`, units: f.qty, sign: -1, undo: () => run(cancelTransfer, { id: r.transferId }) });
+          afterSuccess({ label: `${f.qty} × ${a.name} → ${to.name}`, units: f.qty, sign: -1, kind: 'transfer', ref: r.transferId, undo: () => run(cancelTransfer, { id: r.transferId }) });
         } else {
           const r = run(moveStock, { type: S.mode, ean: S.ean, qty: f.qty, reason: S.reason, locCode: f.loc || undefined, article: !a ? f.draft : undefined });
           const name = db().articles[S.ean].name;

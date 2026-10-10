@@ -1,10 +1,10 @@
 // Requêtes dérivées (lecture seule) : listes, indicateurs, séries, plan, réassort.
 // Fonctions pures : (db, paramètres, now) → données. Aucune écriture, aucun accès au DOM.
 import { LIMITS } from './config.js';
-import { matches } from '../lib/text.js';
+import { matches, natCompare as nat } from '../lib/text.js';
+import { isCode, codeVariants } from '../lib/ean.js';
 
 const DAY = 86_400_000;
-const nat = (a, b) => String(a).localeCompare(String(b), 'fr', { numeric: true, sensitivity: 'base' });
 
 // ── Éléments de base ──
 export const locCode = (l) => (l ? [l.rack, l.allee, l.etagere, l.case].filter(Boolean).join('-') : '');
@@ -32,6 +32,17 @@ export const statusIn = (db, depotId, article) => stockStatus(levelOf(db, depotI
 export function articleLocations(db, ean, depotId) {
   const ids = db.articles[ean]?.locations?.[depotId] ?? [];
   return ids.map((id) => db.locations[id]).filter(Boolean);
+}
+
+/**
+ * Code lu → code de la pièce au catalogue : le code exact, sinon une écriture équivalente (UPC-A / EAN-13 /
+ * GTIN-14, voir codeVariants). null si aucune pièce ne correspond.
+ */
+export function resolveEan(db, code) {
+  const s = String(code ?? '').trim();
+  if (!isCode(s)) return null;
+  if (Object.hasOwn(db.articles, s)) return s;
+  return codeVariants(s).find((v) => Object.hasOwn(db.articles, v)) ?? null;
 }
 
 export const families = (db) => [...new Set(Object.values(db.articles).map((a) => a.family).filter(Boolean))].sort(nat);
@@ -68,6 +79,23 @@ export function searchArticles(db, depotId, { q = '', filter = 'all', family = '
   return rows.sort(cmp);
 }
 
+// ── Sens d'un mouvement (indicateurs) ──
+const VOID_TRANSFER = new Set(['cancelled', 'refused']);
+/**
+ * Sens d'un mouvement pour les indicateurs : 'in' (entrée, livraison reçue de l'entrepôt ou d'un autre dépôt),
+ * 'out' (sortie, expédition à un atelier, transfert vers un autre dépôt) ou null. Ne comptent pas : les
+ * corrections d'inventaire, un mouvement annulé et son annulation, un transfert annulé ou refusé et son retour.
+ */
+export function flowOf(db, h) {
+  if (h.undone || h.undoOf) return null;
+  switch (h.type) {
+    case 'in': case 'transfer_in': return 'in';
+    case 'out': return 'out';
+    case 'transfer': return h.transferId && VOID_TRANSFER.has(db.transfers?.[h.transferId]?.status) ? null : 'out';
+    default: return null;
+  }
+}
+
 // ── Indicateurs ──
 export function kpis(db, depotId, { days = 30, now = new Date() } = {}) {
   const since = now.getTime() - days * DAY;
@@ -85,7 +113,8 @@ export function kpis(db, depotId, { days = 30, now = new Date() } = {}) {
   for (const h of db.history) {
     if (h.depotId !== depotId || new Date(h.date).getTime() < since) continue;
     moves++; net += h.delta;
-    if (h.type === 'in') ins += h.qty; else if (h.type === 'out') outs += h.qty;
+    const dir = flowOf(db, h);
+    if (dir === 'in') ins += h.qty; else if (dir === 'out') outs += h.qty;
   }
   return { refs: arts.length, units, value, alerts, zeros, serviceRate: tracked ? Math.round((healthy / tracked) * 100) : 100, ins, outs, moves, net };
 }
@@ -130,12 +159,14 @@ export function flow(db, depotId, { days = 30, now = new Date() } = {}) {
   });
   const start = buckets[0].endMs - bucket * DAY;
   for (const h of db.history) {
-    if (h.depotId !== depotId || (h.type !== 'in' && h.type !== 'out')) continue;
+    if (h.depotId !== depotId) continue;
+    const dir = flowOf(db, h);
+    if (!dir) continue;
     const t = new Date(h.date).getTime();
     if (t <= start) continue;
     const b = buckets.find((x) => t <= x.endMs);
     if (!b) continue;
-    if (h.type === 'in') b.ins += h.qty; else b.outs += h.qty;
+    if (dir === 'in') b.ins += h.qty; else b.outs += h.qty;
   }
   return buckets;
 }
@@ -173,7 +204,8 @@ export function operatorStats(db, depotId, { days = 30, now = new Date(), n = 5 
     if (h.depotId !== depotId || !h.operator || new Date(h.date).getTime() < since) continue;
     const e = m.get(h.operator) ?? { name: h.operator, moves: 0, ins: 0, outs: 0 };
     e.moves++;
-    if (h.type === 'in') e.ins += h.qty; else if (h.type === 'out') e.outs += h.qty;
+    const dir = flowOf(db, h);
+    if (dir === 'in') e.ins += h.qty; else if (dir === 'out') e.outs += h.qty;
     m.set(h.operator, e);
   }
   return [...m.values()].sort((a, b) => b.moves - a.moves).slice(0, n);
@@ -195,17 +227,27 @@ const OPEN_SUPPLIER = ['sent', 'partial'];
  * (reste à recevoir). `withDraft` : compte aussi le brouillon (ne pas proposer deux fois la même pièce).
  */
 export function incomingQty(db, depotId, ean, { withDraft = false } = {}) {
-  let n = 0;
+  return incomingIndex(db, depotId, { withDraft, ean }).get(ean) ?? 0;
+}
+
+/**
+ * Quantités en route vers un dépôt, pour TOUS les articles en un seul parcours des commandes (Map ean → qté).
+ * À préférer à `incomingQty` dans une boucle sur les articles : les commandes ne sont lues qu'une fois.
+ * `ean` : ne compter que cet article (raccourci de `incomingQty`).
+ */
+export function incomingIndex(db, depotId, { withDraft = false, ean = null } = {}) {
+  const out = new Map();
   for (const o of Object.values(db.orders ?? {})) {
     if (o.depotId !== depotId) continue;
     if (o.kind === 'internal' ? !OPEN_INTERNAL.includes(o.status) || (o.status === 'draft' && !withDraft) : !OPEN_SUPPLIER.includes(o.status)) continue;
     for (const l of o.lines) {
-      if (l.ean !== ean) continue;
-      if (o.kind === 'supplier') n += Math.max(0, l.qty - (l.received ?? 0));
-      else n += o.status === 'shipped' ? Math.max(0, (l.shipped ?? 0) - (l.received ?? 0)) : l.qty;
+      if (ean !== null && l.ean !== ean) continue;
+      const n = o.kind === 'supplier' ? Math.max(0, l.qty - (l.received ?? 0))
+        : o.status === 'shipped' ? Math.max(0, (l.shipped ?? 0) - (l.received ?? 0)) : l.qty;
+      if (n) out.set(l.ean, (out.get(l.ean) ?? 0) + n);
     }
   }
-  return n;
+  return out;
 }
 const roundUp = (n, pack) => (pack > 1 ? Math.ceil(n / pack) * pack : n);
 
@@ -215,11 +257,12 @@ const roundUp = (n, pack) => (pack > 1 ? Math.ceil(n / pack) * pack : n);
  */
 export function reorderList(db, depotId, { withDraft = false } = {}) {
   const rows = [];
+  const route = incomingIndex(db, depotId, { withDraft });
   for (const a of Object.values(db.articles)) {
     const qty = stockOf(db, depotId, a.ean);
     const { min, max } = levelOf(db, depotId, a);
     if (min <= 0) continue;
-    const incoming = incomingQty(db, depotId, a.ean, { withDraft });
+    const incoming = route.get(a.ean) ?? 0;
     if (qty + incoming > min) continue;
     const suggested = roundUp(Math.max(1, max - qty - incoming), a.pack || 1);
     rows.push({ article: a, qty, min, max, threshold: min, target: max, incoming, suggested, cost: suggested * (a.price || 0), locs: articleLocations(db, a.ean, depotId) });
@@ -234,10 +277,17 @@ export function reorderList(db, depotId, { withDraft = false } = {}) {
  */
 export function planModel(db, depotId) {
   const locs = Object.values(db.locations).filter((l) => l.depotId === depotId);
-  const arts = Object.values(db.articles);
+  // Articles rangés à chaque emplacement, en un seul parcours du catalogue
+  const byLoc = new Map();
+  for (const a of Object.values(db.articles)) {
+    for (const id of a.locations?.[depotId] ?? []) {
+      if (!byLoc.has(id)) byLoc.set(id, []);
+      byLoc.get(id).push(a);
+    }
+  }
   const stats = new Map();
   for (const l of locs) {
-    const here = arts.filter((a) => (a.locations?.[depotId] ?? []).includes(l.id));
+    const here = byLoc.get(l.id) ?? [];
     const units = here.reduce((s, a) => s + stockOf(db, depotId, a.ean), 0);
     const alerts = here.filter((a) => isLow(levelOf(db, depotId, a).min, stockOf(db, depotId, a.ean))).length;
     const state = !here.length ? 'empty' : units === 0 ? 'zero' : alerts ? 'alert' : 'ok';
@@ -253,10 +303,12 @@ export function planModel(db, depotId) {
     const colKey = (l) => [l.etagere, l.case].filter(Boolean).join('-') || '—';
     const columns = [...new Set(list.map(colKey))].sort(nat);
     const aisles = [...new Set(list.map((l) => l.allee || '—'))].sort(nat);
+    const at = new Map();
+    for (const l of list) { const k = `${l.allee || '—'}\u0000${colKey(l)}`; if (!at.has(k)) at.set(k, l); }
     const rows = aisles.map((aisle) => ({
       aisle,
       cells: columns.map((c) => {
-        const l = list.find((x) => (x.allee || '—') === aisle && colKey(x) === c);
+        const l = at.get(`${aisle}\u0000${c}`);
         return l ? stats.get(l.id) : null;
       }),
     }));

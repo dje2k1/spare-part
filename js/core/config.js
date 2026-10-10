@@ -1,7 +1,7 @@
 // Constantes de l'application : version, clés de stockage, limites, rôles et permissions.
 
-export const APP_VERSION = '3.0.0';
-export const APP_LABEL = 'Version 3'; // pastille affichée sur l'accueil
+export const APP_VERSION = '3.1.0';
+export const APP_LABEL = 'Version 3.1'; // pastille affichée sur l'accueil
 export const DB_VERSION = 6;
 
 export const KEYS = {

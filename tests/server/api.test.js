@@ -73,6 +73,16 @@ test('jeton forgé ou absent : 401 partout', async () => {
   assert.equal((await c.post('/api/ops', { userId: 'x', ops: [] })).status, 401);
 });
 
+test('cookie mal encodé (autre application du domaine) : ignoré, jamais d\'erreur 500', async () => {
+  const c = client(srv.base);
+  await c.login('Sophie Martin', '2345');
+  const good = c.cookie;
+  c.cookie = `suivi=%E0%A4%A; ${good}; autre=%`;
+  assert.equal((await c.get('/api/session')).status, 200, 'la session reste reconnue');
+  c.cookie = 'mode_session=%E0%A4%A';
+  assert.equal((await c.get('/api/session')).status, 401, 'jeton illisible = pas de session (et non une erreur interne)');
+});
+
 test('CSRF : origine étrangère et type de contenu non JSON refusés', async () => {
   const c = client(srv.base);
   await c.login('Sophie Martin', '2345');
@@ -199,6 +209,52 @@ test('fichiers servis : application seulement, aucune fuite du serveur ou des do
   assert.equal((await fetch(`${srv.base}/index.html`, { method: 'POST' })).status, 405);
   const etag = (await get('/index.html')).headers.get('etag');
   assert.equal((await fetch(`${srv.base}/index.html`, { headers: { 'if-none-match': etag } })).status, 304);
+});
+
+test('fichiers servis compressés (Brotli, sinon gzip) : contenu identique, en-tête Vary', async () => {
+  const http = await import('node:http');
+  const zlib = await import('node:zlib');
+  const { readFileSync } = await import('node:fs');
+  const raw = (path, encoding) => new Promise((resolve, reject) => {
+    http.get(srv.base + path, { headers: encoding ? { 'accept-encoding': encoding } : {} }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    }).on('error', reject);
+  });
+  const original = readFileSync(new URL('../../js/core/ops.js', import.meta.url));
+  const br = await raw('/js/core/ops.js', 'gzip, deflate, br');
+  assert.equal(br.headers['content-encoding'], 'br');
+  assert.equal(br.headers.vary, 'Accept-Encoding');
+  assert.ok(br.body.length < original.length / 2, `compression efficace (${br.body.length} / ${original.length} octets)`);
+  assert.deepEqual(zlib.brotliDecompressSync(br.body), original);
+  const gz = await raw('/js/core/ops.js', 'gzip');
+  assert.equal(gz.headers['content-encoding'], 'gzip');
+  assert.deepEqual(zlib.gunzipSync(gz.body), original);
+  const plain = await raw('/js/core/ops.js');
+  assert.equal(plain.headers['content-encoding'], undefined);
+  assert.deepEqual(plain.body, original);
+  // La page reste réécrite (mode serveur annoncé), compressée ou non
+  const page = await raw('/', 'br');
+  assert.match(zlib.brotliDecompressSync(page.body).toString('utf8'), /<meta name="mode-sync" content="server">/);
+  const font = await raw('/fonts/jost-variable.woff2', 'br');
+  assert.equal(font.headers['content-encoding'], undefined, 'police déjà compressée : servie telle quelle');
+});
+
+test('sessions expirées purgées (appareils perdus) ; sessions actives conservées', async () => {
+  let clock = Date.now();
+  const s = await startApp({ now: () => new Date(clock), sessionHours: 1 });
+  try {
+    const old = s.client();
+    await old.login('Julie Laurent', '4567');
+    clock += 45 * 60_000;
+    const fresh = s.client();
+    await fresh.login('Sophie Martin', '2345');
+    clock += 30 * 60_000; // la première a dépassé 1 h sans activité, la seconde non
+    assert.equal(s.app.auth.purge(), 1);
+    assert.equal((await old.get('/api/session')).status, 401);
+    assert.equal((await fresh.get('/api/session')).status, 200);
+  } finally { await s.stop(); }
 });
 
 test('API inconnue et corps trop volumineux', async () => {

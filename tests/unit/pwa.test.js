@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { precacheList, appVersion } from '../../scripts/sw-precache.js';
+import { precacheList, appVersion, contentHash } from '../../scripts/sw-precache.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (f) => readFileSync(join(root, f), 'utf8');
@@ -16,9 +16,11 @@ test('sw.js : liste de pré-cache à jour (lancer « npm run sw » après tout a
   assert.deepEqual(listed, precacheList());
 });
 
-test('sw.js : version = APP_VERSION et nom de cache versionné', () => {
-  assert.equal(/const VERSION = '([^']+)'/.exec(sw)[1], appVersion());
+test('sw.js : version = APP_VERSION + empreinte du contenu (tout fichier modifié renouvelle le cache)', () => {
+  assert.equal(/const VERSION = '([^']+)'/.exec(sw)[1], `${appVersion()}-${contentHash()}`, 'lancer « npm run sw » après toute modification d\'un fichier servi');
   assert.match(sw, /const CACHE = `mode-stock-\$\{VERSION\}`/);
+  assert.match(contentHash(), /^[0-9a-f]{8}$/);
+  assert.notEqual(contentHash(precacheList().slice(0, -1)), contentHash(), 'l\'empreinte dépend de chaque fichier');
 });
 
 test('tous les fichiers listés existent', () => {

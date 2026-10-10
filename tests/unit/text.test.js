@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { esc, html, raw, SafeHtml, fold, matches, toInt, intIn, toMoney, fmtRelative, fmtInt, initials, plural, clamp } from '../../js/lib/text.js';
+import { esc, html, raw, SafeHtml, fold, matches, toInt, intIn, toMoney, fmtRelative, fmtInt, initials, plural, clamp, localDay, natCompare } from '../../js/lib/text.js';
 
 test('esc échappe & < > " \' et `', () => {
   assert.equal(esc(`<img src="x" onerror='a'>&\``), '&lt;img src=&quot;x&quot; onerror=&#39;a&#39;&gt;&amp;&#96;');
@@ -89,4 +89,18 @@ test('formats et petits utilitaires', () => {
   assert.match(plural(2, 'article'), /^2 articles$/);
   assert.match(plural(1, 'article'), /^1 article$/);
   assert.equal(clamp(5, 0, 3), 3);
+});
+
+test('localDay : jour LOCAL (et non UTC) au format AAAA-MM-JJ', () => {
+  const d = new Date(2026, 9, 11, 0, 30); // 00 h 30, heure locale : déjà le 11, même si UTC est encore la veille
+  assert.equal(localDay(d), '2026-10-11');
+  assert.equal(localDay(new Date(2026, 0, 5, 23, 59)), '2026-01-05');
+  assert.match(localDay(), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test('tri naturel français et recherche répétée (cache) cohérents', () => {
+  assert.deepEqual(['R10', 'r2', 'R1', 'Établi', 'etagere'].sort(natCompare), ['Établi', 'etagere', 'R1', 'r2', 'R10']);
+  assert.equal(natCompare('A2', 'A10') < 0, true);
+  for (let i = 0; i < 3; i++) assert.equal(matches('bandouliere 120', 'Bandoulière cuir 120cm'), true, 'même résultat à chaque appel');
+  assert.equal(matches('zip', 'Bandoulière cuir 120cm'), false);
 });

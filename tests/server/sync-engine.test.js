@@ -92,7 +92,8 @@ test('conflit entre deux sites hors ligne : le second refusé, motif signalé, b
   await admin.engine.resync();
   const paris = depotByCode(admin.engine.db, 'DEP-01').id;
   const ean = Object.keys(admin.engine.db.articles)[0];
-  admin.engine.submit('adjustStock', { ean, qty: 4, reason: 'Inventaire' }, { ...admin.ctx(), depotId: paris });
+  // Stock ramené à 4 (la démonstration est simulée jusqu'à l'instant présent : il peut déjà valoir 4)
+  if (stockOf(admin.engine.db, paris, ean) !== 4) admin.engine.submit('adjustStock', { ean, qty: 4, reason: 'Inventaire' }, { ...admin.ctx(), depotId: paris });
   await admin.engine.flush();
   const s1 = await device('Sophie Martin', '2345');
   const s2 = await device('Julie Laurent', '4567');

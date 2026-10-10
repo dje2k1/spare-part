@@ -1,5 +1,5 @@
 // Administration : utilisateurs, dépôts, emplacements, import/export, données (sauvegarde, stockage, verrouillage, production).
-import { html, fmtInt, fmtDateTime, plural } from '../../lib/text.js';
+import { html, fmtInt, fmtDateTime, plural, localDay } from '../../lib/text.js';
 import { parse as parseCsv, stringify } from '../../lib/csv.js';
 import { icon, actions, $, val, download } from '../dom.js';
 import { db, depot, can, run, preview, store, state, storage } from '../state.js';
@@ -125,7 +125,7 @@ function locSheet(id) {
 // ── Import ──
 function importer() {
   return html`<div class="pad stack">
-    <p class="muted">Importez un fichier CSV (séparateur « ; » ou « , », UTF-8). Colonnes reconnues : <code>ean13</code>, <code>name</code>, <code>family</code>, <code>ref</code>, <code>price</code>, <code>threshold</code> et, en option, <code>stock</code>. Un aperçu s'affiche avant toute écriture.</p>
+    <p class="muted">Importez un fichier CSV (séparateur « ; » ou « , », UTF-8). Colonnes reconnues : <code>ean13</code>, <code>name</code>, <code>family</code>, <code>ref</code>, <code>price</code>, <code>threshold</code>, <code>pack</code> (conditionnement), <code>supplier</code> (nom d'un fournisseur existant), <code>supplierRef</code> et, en option, <code>stock</code>. L'export « Catalogue complet » se réimporte tel quel. Un aperçu s'affiche avant toute écriture.</p>
     <label class="photo-drop" for="imp-file">${icon('upload', 'i--xl')}<span class="photo-drop__title">Choisir un fichier CSV</span></label>
     <input type="file" id="imp-file" class="sr-only" accept=".csv,text/csv,text/plain" data-change="adm.import.file">
     <button type="button" class="btn btn--ghost btn--sm" data-action="adm.import.template">${icon('download', 'i--sm')}Télécharger un modèle</button></div>`;
@@ -218,7 +218,7 @@ async function paintStorage() {
   el.textContent = text;
 }
 
-const stamp = () => new Date().toISOString().slice(0, 10);
+const stamp = () => localDay();
 const formErr = (form, e) => { if (e.isOpError) { form.querySelector('[data-err]').textContent = e.message; return true; } return false; };
 
 export function initAdmin() {
@@ -287,7 +287,7 @@ export function initAdmin() {
         refresh();
       } catch (e) { if (!e.isOpError) throw e; toast(e.message, { tone: 'error' }); }
     },
-    'adm.import.template': () => download('modele-catalogue.csv', stringify([{ ean13: '3700089690011', name: 'Bandoulière cuir 120cm', family: 'Bandoulières', ref: 'BND-CN-120', price: '18,5', threshold: 15, stock: 40 }], ['ean13', 'name', 'family', 'ref', 'price', 'threshold', 'stock'].map((k) => ({ key: k, label: k }))), 'text/csv'),
+    'adm.import.template': () => download('modele-catalogue.csv', stringify([{ ean13: '3700089690011', name: 'Bandoulière cuir 120cm', family: 'Bandoulières', ref: 'BND-CN-120', price: '18,5', threshold: 15, pack: 1, supplier: '', supplierRef: '', stock: 40 }], ['ean13', 'name', 'family', 'ref', 'price', 'threshold', 'pack', 'supplier', 'supplierRef', 'stock'].map((k) => ({ key: k, label: k }))), 'text/csv'),
     // Exports
     'adm.export.stock': () => {
       const rows = searchArticles(db(), depot().id, { sort: 'loc' });
@@ -301,7 +301,8 @@ export function initAdmin() {
       const ds = Object.values(db().depots);
       download(`catalogue-${stamp()}.csv`, stringify(Object.values(db().articles), [
         { label: 'ean13', get: eanOf }, { label: 'name', get: (a) => a.name }, { label: 'family', get: (a) => a.family }, { label: 'ref', get: (a) => a.ref },
-        { label: 'price', get: (a) => String(a.price).replace('.', ',') }, { label: 'threshold', get: (a) => a.threshold },
+        { label: 'price', get: (a) => String(a.price).replace('.', ',') }, { label: 'threshold', get: (a) => a.threshold }, { label: 'pack', get: (a) => a.pack || 1 },
+        { label: 'supplier', get: (a) => db().suppliers[a.supplierId]?.name ?? '' }, { label: 'supplierRef', get: (a) => a.supplierRef },
         ...ds.map((d) => ({ label: `stock ${d.code || d.name}`, get: (a) => stockOf(db(), d.id, a.ean) })),
       ]), 'text/csv');
     },

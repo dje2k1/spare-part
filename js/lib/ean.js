@@ -5,6 +5,24 @@ import { raw } from './text.js';
 /** Un code article valide : 8 à 14 chiffres (EAN-8, UPC-A, EAN-13, ITF-14, codes internes). */
 export const isCode = (s) => /^\d{8,14}$/.test(String(s ?? ''));
 
+/**
+ * Autres écritures d'un même code GTIN, zéros de tête ajoutés ou retirés (le chiffre de contrôle GS1 ne change
+ * pas) : un lecteur transmet souvent un UPC-A sur 12 chiffres alors que la pièce est enregistrée en EAN-13
+ * (« 0 » + UPC-A), ou un GTIN-14 complété de zéros. Le code lui-même n'est pas repris.
+ */
+export function codeVariants(code) {
+  const s = String(code ?? '');
+  if (!isCode(s)) return [];
+  const core = s.replace(/^0+/, '');
+  const out = [];
+  for (const n of [13, 12, 14, 8]) {
+    if (core.length > n) continue;
+    const v = core.padStart(n, '0');
+    if (v !== s && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
 /** Chiffre de contrôle GS1 : poids 3,1,3,1… en partant de la droite du corps du code. */
 export function checkDigit(body) {
   let sum = 0, w = 3;
