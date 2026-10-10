@@ -260,3 +260,10 @@ button.cell:active { transform: scale(0.97); }
 .heat__c--l2 { background: color-mix(in srgb, var(--gold) 52%, var(--bg-sunken)); }
 .heat__c--l3 { background: color-mix(in srgb, var(--gold) 78%, var(--bg-sunken)); }
 .heat__c--l4 { background: var(--gold); }
+
+/* Fiche : trois indicateurs sur une ligne ; titres de section suivis d'un formulaire */
+.kpis--inline { grid-template-columns: repeat(3, 1fr); }
+.kpis--inline .kpi { padding: var(--s3); }
+.kpis--inline .kpi__value { font-size: var(--fs-xl); }
+.kpis--inline .kpi__label { letter-spacing: 0.08em; font-size: 0.6875rem; }
+h3.sheet-sec { margin-bottom: var(--s3); }

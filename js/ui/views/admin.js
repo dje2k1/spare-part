@@ -292,8 +292,7 @@ export function initAdmin() {
         const ok = await confirmDialog({ title: 'Remplacer toutes les données ?', message: `La sauvegarde du ${fmtDateTime(exportedAt)} (${plural(Object.keys(restored.articles).length, 'article')}, ${plural(Object.keys(restored.users).length, 'utilisateur')}) remplacera les données actuelles. Vous serez déconnecté.`, confirmLabel: 'Restaurer', danger: true });
         if (!ok) return;
         await upgradeLegacyPins(restored);
-        store.replace(restored);
-        endSession('Sauvegarde restaurée : reconnectez-vous.');
+        endSession('Sauvegarde restaurée : reconnectez-vous.', { replaceDb: restored });
       } catch (e) { toast(e.message, { tone: 'error' }); }
       input.value = '';
     },
@@ -322,8 +321,7 @@ export function initAdmin() {
       if (!(await confirmDialog({ title: 'Effacer les données de démonstration ?', message: 'Cette action est définitive.', confirmLabel: 'Effacer', danger: true }))) return;
       const fresh = await buildFreshDb(new Date(), { adminName: val(form, 'admin'), pin, depotName: val(form, 'depot'), depotCode: val(form, 'code') });
       await closeSheet();
-      store.replace(fresh);
-      endSession('Atelier créé : connectez-vous avec votre compte administrateur.');
+      endSession('Atelier créé : connectez-vous avec votre compte administrateur.', { replaceDb: fresh });
     },
     async 'adm.wipe'() {
       const word = await promptDialog({ title: 'Effacer toutes les données ?', label: 'Tapez EFFACER pour confirmer', hint: 'Les données de cet appareil seront supprimées définitivement. Exportez une sauvegarde avant.', confirmLabel: 'Effacer', validate: (v) => (v === 'EFFACER' ? '' : 'Tapez exactement EFFACER.') });

@@ -118,9 +118,11 @@ function articleFields(f, { photoKeep } = {}) {
   return { name, family: clean(f.family, LIMITS.short), ref: clean(f.ref, LIMITS.ref), price, threshold, photo };
 }
 
+/** `createOnly` : le formulaire « Nouvelle pièce » ne doit jamais écraser une pièce existante portant le même code. */
 export function upsertArticle(db, ctx, f) {
   const ean = eanOf(f.ean);
   const isNew = !db.articles[ean];
+  if (f.createOnly && !isNew) fail(`Ce code existe déjà : « ${db.articles[ean].name} ». Ouvrez la fiche de cette pièce pour la modifier.`);
   need(ctx, isNew ? 'article.create' : 'article.edit');
   const fields = articleFields(f, { photoKeep: db.articles[ean]?.photo });
   db.articles[ean] = { ...(db.articles[ean] ?? { locations: {} }), ean, ...fields };

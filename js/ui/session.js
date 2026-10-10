@@ -50,13 +50,19 @@ export function startSession(user, depotId) {
   try { navigator.storage?.persist?.(); } catch { /* non supporté */ }
 }
 
-export function endSession(message = '') {
-  if (!state.session) return;
-  try { store.run((d) => recordAuth(d, ctx(), `Déconnexion de ${state.session.user.name}`)); } catch { /* base indisponible : on déconnecte quand même */ }
+/**
+ * Ferme la session. `replaceDb` : base à installer (restauration, passage en production) — elle l'est
+ * APRÈS avoir détaché la session, sinon l'écouteur du store reverrait une session dont le compte a disparu.
+ */
+export function endSession(message = '', { replaceDb = null } = {}) {
+  const s = state.session;
+  if (!s) return;
+  state.session = null; // d'abord : les écouteurs du store (revalidation) ne doivent plus voir de session
+  if (replaceDb) store.replace(replaceDb);
+  else try { store.run((d) => recordAuth(d, { user: s.user, depotId: s.depotId, now: new Date() }, `Déconnexion de ${s.user.name}`)); } catch { /* base indisponible : on déconnecte quand même */ }
   stopRouter();
   closeTransient();
   disarmIdle();
-  state.session = null;
   $('#app').hidden = true;
   history.replaceState(null, '', location.pathname + location.search);
   onLogout(message);

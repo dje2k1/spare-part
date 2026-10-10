@@ -114,7 +114,7 @@ test.describe('scan continu', () => {
     const ean = eanByName(await db(page), 'Zip YKK 30cm');
     await page.goto('./#/scan/in');
     await page.locator('body').click({ position: { x: 5, y: 300 } });
-    await page.keyboard.type(ean, { delay: 5 });
+    await page.keyboard.type(ean); // sans délai : une douchette envoie ses caractères à < 30 ms d'écart
     await page.keyboard.press('Enter');
     await expect(page.locator('.scan-card__name')).toHaveText(/Zip YKK 30cm/);
   });

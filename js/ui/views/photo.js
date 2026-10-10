@@ -29,7 +29,7 @@ function keyBox() {
 
 function body() {
   const hasKey = Boolean(readApiKey(storage));
-  if (!hasKey && P.phase !== 'loading') return keyBox();
+  if (!hasKey && P.phase !== 'loading') return html`${P.phase === 'error' ? html`<div class="banner banner--error" role="alert">${icon('alert', 'i--sm')}<span class="banner__text">${P.error}</span></div>` : ''}${keyBox()}`;
   switch (P.phase) {
     case 'loading':
       return html`<div class="empty"><span class="spinner" role="status"></span><p class="empty__title">Analyse en cours…</p><p>Identification du produit puis liste des pièces.</p>
@@ -76,7 +76,7 @@ export const photoRoute = { title: 'Analyser une pièce', back: true, perm: 'art
 export function initPhoto() {
   actions({
     'photo.key.save'(form) {
-      try { saveApiKey(storage, val(form, 'key')); toast('Clé enregistrée.', { tone: 'ok' }); paint(); } catch (e) { if (e instanceof AiError) form.querySelector('[data-err]').textContent = e.message; else throw e; }
+      try { saveApiKey(storage, val(form, 'key')); P.phase = P.photo ? 'preview' : 'idle'; P.error = ''; toast('Clé enregistrée.', { tone: 'ok' }); paint(); } catch (e) { if (e instanceof AiError) form.querySelector('[data-err]').textContent = e.message; else throw e; }
     },
     async 'photo.key.remove'() {
       if (!(await confirmDialog({ title: 'Supprimer la clé API ?', message: 'Vous devrez la saisir à nouveau pour analyser une photo.', confirmLabel: 'Supprimer', danger: true }))) return;

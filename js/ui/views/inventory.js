@@ -175,7 +175,7 @@ export function initInventory() {
     async 'inv.validate'() {
       if (!sig.has) { toast('La signature du responsable est requise.', { tone: 'error' }); return; }
       const lockKey = `inv:${state.session.user.id}`;
-      const eligible = Object.values(db().users).filter((u) => can_(u) && (u.role === 'admin' || u.depotId === I.depotId));
+      const eligible = Object.values(db().users).filter((u) => isValidator(u) && (u.role === 'admin' || u.depotId === I.depotId));
       const validator = await pinDialog({
         title: 'Validation par un responsable', message: 'Saisissez le PIN d\'un responsable de ce dépôt (ou d\'un administrateur).',
         async verify(pin) {
@@ -196,5 +196,5 @@ export function initInventory() {
   });
 }
 
-const can_ = (u) => ROLES[u.role] && (u.role === 'manager' || u.role === 'admin') && Boolean(u.pin);
+const isValidator = (u) => ROLES[u.role] && (u.role === 'manager' || u.role === 'admin') && Boolean(u.pin);
 function commit() { const n = readQty(); if (n !== null) I.items[I.idx].real = n; }

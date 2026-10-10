@@ -25,7 +25,11 @@ export function createServer() {
       if (!file.startsWith(root) || /(^|\/)(node_modules|\.git|tests)(\/|$)/.test(rel)) { res.writeHead(403); return res.end(); }
       if (!(await stat(file)).isFile()) throw new Error('not a file');
       res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
-      res.end(await readFile(file));
+      let body = await readFile(file);
+      // Hook de test : le cookie « swv=x.y.z » fait annoncer une autre version par sw.js (simule un déploiement, sans toucher aux autres tests).
+      const swv = /(?:^|;\s*)swv=([\w.-]+)/.exec(req.headers.cookie ?? '')?.[1];
+      if (swv && rel === 'sw.js') body = Buffer.from(body.toString().replace(/const VERSION = '[^']*'/, `const VERSION = '${swv}'`));
+      res.end(body);
     } catch {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found');

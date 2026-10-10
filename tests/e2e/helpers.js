@@ -12,15 +12,18 @@ export async function demoJson() {
 }
 
 export const test = base.extend({
+  /** Réponses HTTP ≥ 400 attendues (ex. API simulée renvoyant 401) : liste d'expressions régulières d'URL. */
+  expectedHttpErrors: [[], { option: true }],
   /** Page qui échoue si la console signale une erreur (dont les violations de CSP). */
-  page: async ({ page }, use) => {
+  page: async ({ page, expectedHttpErrors }, use) => {
     const problems = [];
+    const expected = (url) => expectedHttpErrors.some((re) => re.test(url));
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-    page.on('response', (r) => { if (r.status() >= 400) problems.push(`HTTP ${r.status()} : ${r.url()}`); });
+    page.on('response', (r) => { if (r.status() >= 400 && !expected(r.url())) problems.push(`HTTP ${r.status()} : ${r.url()}`); });
     page.on('console', (m) => {
       if (m.type() !== 'error') return;
       const t = m.text();
-      if (/^Failed to load resource/.test(t)) return; // déjà signalé avec l'URL par l'écouteur « response »
+      if (/^Failed to load resource/.test(t)) return; // déjà signalé (ou attendu) via l'écouteur « response »
       problems.push(`console.error: ${t}`);
     });
     await use(page);
@@ -34,7 +37,12 @@ export { expect };
 export async function seedDemo(page, mutate) {
   let json = await demoJson();
   if (mutate) { const d = JSON.parse(json); mutate(d); json = JSON.stringify(d); }
-  await page.addInitScript(([key, value]) => { if (!localStorage.getItem(key)) localStorage.setItem(key, value); }, [KEYS.db, json]);
+  // Une seule fois par onglet : un effacement volontaire (ou une restauration) ne doit pas être « réparé » par le test.
+  await page.addInitScript(([key, value]) => {
+    if (sessionStorage.getItem('__seeded')) return;
+    sessionStorage.setItem('__seeded', '1');
+    if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+  }, [KEYS.db, json]);
 }
 
 /** Écrans de connexion : dépôt (si plusieurs) → profil → PIN. */
@@ -61,4 +69,20 @@ export const toastText = (page) => page.locator('.toast__text').last();
 export async function go(page, hash, titleRe) {
   await page.evaluate((h) => { location.hash = h; }, hash);
   if (titleRe) await expect(page.locator('#topbar-title')).toHaveText(titleRe);
+}
+
+/** Tape un PIN sur le clavier à l'écran (connexion ou dialogue de validation). */
+export async function typePin(page, pin, { ok = false } = {}) {
+  for (const d of pin) await page.locator(`.keypad:visible [data-key="${d}"]`).click();
+  if (ok) await page.locator('.keypad:visible [data-key="ok"]').click(); // longueur inconnue : validation explicite
+}
+
+/** Dessine un trait sur un canvas (signature). */
+export async function scribble(page, selector) {
+  const box = await page.locator(selector).boundingBox();
+  await page.mouse.move(box.x + 20, box.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 80, box.y + 70, { steps: 6 });
+  await page.mouse.move(box.x + 140, box.y + 25, { steps: 6 });
+  await page.mouse.up();
 }

@@ -82,6 +82,7 @@ test('fmtRelative', () => {
 
 test('formats et petits utilitaires', () => {
   assert.match(fmtInt(1045), /^1\s?045$/);
+  assert.equal(fmtInt(1045), '1\u00a0045', 'espace insécable visible dans toutes les polices');
   assert.equal(initials('Sophie Martin'), 'SM');
   assert.equal(initials('  '), '?');
   assert.equal(initials('cher'), 'C');

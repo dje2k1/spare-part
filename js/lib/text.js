@@ -76,8 +76,10 @@ export const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 const nf = new Intl.NumberFormat('fr-FR');
 const eur0 = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const eur2 = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
-export const fmtInt = (n) => nf.format(Number(n) || 0);
-export const fmtEur = (n, decimals = false) => (decimals ? eur2 : eur0).format(Number(n) || 0);
+// Espace fine insécable (U+202F) → insécable ordinaire : absente de nombreuses polices, elle disparaît visuellement (« 1056 »).
+const readable = (s) => s.replace(/\u202f/g, '\u00a0');
+export const fmtInt = (n) => readable(nf.format(Number(n) || 0));
+export const fmtEur = (n, decimals = false) => readable((decimals ? eur2 : eur0).format(Number(n) || 0));
 
 const dFmt = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
 const tFmt = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });

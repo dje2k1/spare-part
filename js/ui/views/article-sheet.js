@@ -37,7 +37,7 @@ function stockTab(a) {
   const q = stockOf(db(), d.id, a.ean);
   const others = Object.values(db().depots).filter((x) => x.id !== d.id).map((x) => ({ x, qty: stockOf(db(), x.id, a.ean) }));
   return html`
-    <div class="kpis">
+    <div class="kpis kpis--inline">
       <div class="kpi"><span class="kpi__value num">${fmtInt(q)}</span><span class="kpi__label">${d.code || d.name}</span></div>
       <div class="kpi"><span class="kpi__value num">${a.threshold ? fmtInt(a.threshold) : '—'}</span><span class="kpi__label">Seuil d'alerte</span></div>
       <div class="kpi"><span class="kpi__value num">${a.price ? fmtEur(q * a.price) : '—'}</span><span class="kpi__label">Valeur</span></div>
@@ -143,6 +143,7 @@ export function initArticleSheet() {
       const err = form.querySelector('[data-err]');
       const fields = { ean: val(form, 'ean'), name: val(form, 'name'), family: val(form, 'family'), ref: val(form, 'ref'), price: val(form, 'price'), threshold: val(form, 'threshold') };
       if (SH.photo !== undefined) fields.photo = SH.photo;
+      if (SH.isNew) fields.createOnly = true;
       try {
         const r = run(upsertArticle, fields);
         toast(r.created ? 'Pièce créée.' : 'Pièce enregistrée.', { tone: 'ok' });

@@ -255,6 +255,8 @@ test('article : création/édition validées, photo contrôlée, droits', () => 
   ops.upsertArticle(db, mgr, { ean: '20000017', name: 'Rivet cuivre 2', photo: '' });
   assert.equal(db.articles['20000017'].photo, '', 'photo supprimée explicitement');
   expectOpError(() => ops.upsertArticle(db, ctxFor(db, 'opParis'), { ean: '20000017', name: 'Modif opérateur' }), /non autorisée/);
+  expectOpError(() => ops.upsertArticle(db, mgr, { ean: '20000017', name: 'Écrasement', createOnly: true }), /existe déjà/);
+  assert.equal(db.articles['20000017'].name, 'Rivet cuivre 2', 'la pièce existante n\'est pas écrasée');
   assert.doesNotThrow(() => ops.upsertArticle(db, ctxFor(db, 'opParis'), { ean: '20000019', name: 'Création opérateur' }));
 });
 
