@@ -68,6 +68,14 @@ async function audit(page, label) {
 }
 
 const serverStock = (srv, code, ean) => srv.app.store.db.stocks[depotByCode(srv.app.store.db, code).id][ean] ?? 0;
+
+/**
+ * Coupure réseau RÉELLE : le serveur cesse d'écouter et ferme ses connexions. Avec un service worker actif,
+ * l'émulation hors ligne du navigateur (context.setOffline) laisse parfois passer une requête ; la réponse se
+ * perd au rechargement et le serveur paraît « déjà à jour ». Couper le serveur rend le test déterministe.
+ */
+const cutServer = (srv) => new Promise((resolve) => { srv.app.server.close(() => resolve()); srv.app.server.closeAllConnections(); });
+const restoreServer = (srv) => new Promise((resolve) => srv.app.server.listen(Number(new URL(srv.base).port), '127.0.0.1', resolve));
 const articleNamed = (srv, prefix) => Object.values(srv.app.store.db.articles).find((a) => a.name.startsWith(prefix));
 
 test.describe('mode serveur', () => {
@@ -222,6 +230,7 @@ test.describe('application rouverte sans réseau', () => {
     const was = serverStock(srv, 'DEP-01', zip.ean);
 
     await context.setOffline(true);
+    await cutServer(srv);
     await connect(page, srv, JULIE); // page servie par le cache ; PIN vérifié sur l'appareil
     await expect(toastText(page)).toContainText('Hors ligne');
     await expect(page.locator('#sync-btn')).toHaveAttribute('data-state', 'offline');
@@ -234,6 +243,7 @@ test.describe('application rouverte sans réseau', () => {
     expect(await shownStock(page, zip.ean)).toBe(was - 1); // la saisie en attente reste visible
     expect(serverStock(srv, 'DEP-01', zip.ean)).toBe(was);
 
+    await restoreServer(srv);
     await context.setOffline(false);
     await expect.poll(() => serverStock(srv, 'DEP-01', zip.ean), { timeout: 15_000 }).toBe(was - 1);
     await expect(page.locator('#sync-btn')).toHaveAttribute('data-state', 'ok', { timeout: 15_000 });
