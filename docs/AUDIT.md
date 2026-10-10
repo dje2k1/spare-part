@@ -12,7 +12,7 @@ Chaque constat est marqué : ✅ corrigé dans la refonte · 💡 proposition no
 |---|---------|-------|--------|
 | F1 | L'opération (entrée/sortie/transfert) est figée par le bouton d'accueil ; le « scanner libre » promet « Choisissez l'opération après détection » mais n'offre aucun choix | Obligation de repasser par l'accueil pour changer d'opération | ✅ sélecteur de mode dans l'écran de scan |
 | F2 | Après chaque validation, retour automatique à l'accueil | Pas de scan en série (cas d'usage principal d'un entrepôt) | ✅ scan continu + récapitulatif de session |
-| F3 | Aucune annulation d'une saisie erronée | Une mauvaise quantité impose une contre-opération manuelle | ✅ « Annuler » 8 s après chaque opération |
+| F3 | Aucune annulation d'une saisie erronée | Une mauvaise quantité impose une contre-opération manuelle | ✅ « Annuler » sur chaque confirmation (toast), annulation autorisée 15 min par la couche métier |
 | F4 | Un transfert en attente ne peut être ni annulé ni refusé | Stock bloqué « en transit » indéfiniment | ✅ annuler (expéditeur) / refuser (destinataire) |
 | F5 | « Entrées 30j », « Sorties 30j » et « Top opérateurs (30j) » ne filtrent pas sur 30 jours | Chiffres faux | ✅ filtre de période réel (7/30/90 j) |
 | F6 | Historique plafonné à 500 lignes alors que la courbe « 30 jours » en dépend ; axe Y dégénéré quand la variation est faible (`1045, 1045, 1045, 1044, 1044`) | Courbe fausse ou plate | ✅ plafond relevé, axe calculé, courbe SVG |
