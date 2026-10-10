@@ -164,11 +164,11 @@ test('transfert : débit immédiat, réception crédite, historique des deux cô
   const { transferId } = ops.createTransfer(db, ctxFor(db, 'opParis'), { ean: EAN.zip, qty: 8, toDepotId: IDS.lyon });
   assert.equal(stockOf(db, IDS.paris, EAN.zip), 12);
   assert.equal(stockOf(db, IDS.lyon, EAN.zip), 5, 'pas encore reçu');
-  assert.equal(db.transfers[0].status, 'pending');
+  assert.equal(Object.values(db.transfers)[0].status, 'pending');
   expectOpError(() => ops.receiveTransfer(db, ctxFor(db, 'opParis'), transferId), /Accès refusé/);
   const rec = ops.receiveTransfer(db, ctxFor(db, 'opLyon'), transferId);
   assert.equal(rec.stock, 13);
-  const tr = db.transfers[0];
+  const tr = Object.values(db.transfers)[0];
   assert.deepEqual([tr.status, tr.receivedBy], ['done', 'Pierre Blanc']);
   assert.deepEqual(db.history.slice(0, 2).map((h) => [h.type, h.delta, h.depotId]), [['transfer_in', 8, IDS.lyon], ['transfer', -8, IDS.paris]]);
   expectOpError(() => ops.receiveTransfer(db, ctxFor(db, 'opLyon'), transferId), /déjà traité/);
@@ -182,7 +182,7 @@ test('transfert : validations (stock, destination, article, quantité)', () => {
   expectOpError(() => ops.createTransfer(db, op, { ean: EAN.zip, qty: 1, toDepotId: 'inconnu' }), /destinataire/);
   expectOpError(() => ops.createTransfer(db, op, { ean: EAN.ghost, qty: 1, toDepotId: IDS.lyon }), /inconnu/);
   expectOpError(() => ops.createTransfer(db, op, { ean: EAN.zip, qty: 0, toDepotId: IDS.lyon }), /Quantité/);
-  assert.equal(db.transfers.length, 0);
+  assert.equal(Object.keys(db.transfers).length, 0);
   assert.equal(stockOf(db, IDS.paris, EAN.zip), 20);
 });
 
@@ -193,13 +193,13 @@ test('transfert : annulation par l\'expéditeur / refus par le destinataire rest
   assert.equal(stockOf(db, IDS.paris, EAN.zip), 10);
   ops.cancelTransfer(db, ctxFor(db, 'opParis'), a); // son auteur
   assert.equal(stockOf(db, IDS.paris, EAN.zip), 18);
-  assert.equal(db.transfers.find((t) => t.id === a).status, 'cancelled');
+  assert.equal(db.transfers[a].status, 'cancelled');
   expectOpError(() => ops.cancelTransfer(db, ctxFor(db, 'opParis'), a), /déjà traité/);
   expectOpError(() => ops.cancelTransfer(db, ctxFor(db, 'opLyon'), b), /Accès refusé/);
   ops.refuseTransfer(db, ctxFor(db, 'opLyon'), b);
   assert.equal(stockOf(db, IDS.paris, EAN.zip), 20);
   assert.equal(stockOf(db, IDS.lyon, EAN.zip), 5, 'le destinataire n\'a jamais été crédité');
-  const t = db.transfers.find((x) => x.id === b);
+  const t = db.transfers[b];
   assert.deepEqual([t.status, t.cancelledBy], ['refused', 'Pierre Blanc']);
   assert.equal(db.history[0].type, 'transfer_cancel');
   assert.equal(db.history[0].depotId, IDS.paris);
@@ -265,9 +265,9 @@ test('suppression d\'article : refusée tant qu\'il reste du stock ou un transfe
   const mgr = ctxFor(db, 'mgrParis');
   expectOpError(() => ops.deleteArticle(db, mgr, EAN.zip), /unité\(s\) en stock/);
   db.stocks[IDS.paris][EAN.clasp] = 0; db.stocks[IDS.lyon][EAN.clasp] = 0;
-  db.transfers.push({ id: 'transferxx01', ean: EAN.clasp, status: 'pending' });
+  db.transfers.transferxx01 = { id: 'transferxx01', ean: EAN.clasp, status: 'pending' };
   expectOpError(() => ops.deleteArticle(db, mgr, EAN.clasp), /transfert en cours/);
-  db.transfers.length = 0;
+  db.transfers = {};
   ops.deleteArticle(db, mgr, EAN.clasp);
   assert.ok(!db.articles[EAN.clasp] && !(EAN.clasp in db.stocks[IDS.paris]) && !(EAN.clasp in db.stocks[IDS.lyon]));
   expectOpError(() => ops.deleteArticle(db, ctxFor(db, 'opParis'), EAN.button), /non autorisée/);
@@ -302,9 +302,9 @@ test('dépôts : garde-fous de suppression', () => {
   delete db.users[IDS.mgrLyon]; delete db.users[IDS.opLyon];
   expectOpError(() => ops.deleteDepot(db, admin, IDS.lyon), /unité\(s\)/);
   db.stocks[IDS.lyon] = {};
-  db.transfers.push({ id: 'transferxx02', status: 'pending', fromDepotId: IDS.paris, toDepotId: IDS.lyon });
+  db.transfers.transferxx02 = { id: 'transferxx02', status: 'pending', fromDepotId: IDS.paris, toDepotId: IDS.lyon };
   expectOpError(() => ops.deleteDepot(db, admin, IDS.lyon), /transferts en cours/);
-  db.transfers.length = 0;
+  db.transfers = {};
   ops.deleteDepot(db, admin, IDS.lyon);
   assert.ok(!db.depots[IDS.lyon] && !db.stocks[IDS.lyon] && !db.locations[IDS.locLyon]);
   expectOpError(() => ops.deleteDepot(db, { ...admin, depotId: 'autre' }, IDS.paris), /dernier dépôt/);
@@ -359,7 +359,7 @@ test('réglage du verrouillage automatique', () => {
   assert.equal(db.meta.settings.sessionMinutes, 30);
   ops.updateSettings(db, ctxFor(db, 'admin'), { sessionMinutes: 0 });
   assert.equal(db.meta.settings.sessionMinutes, 0);
-  expectOpError(() => ops.updateSettings(db, ctxFor(db, 'admin'), { sessionMinutes: 999 }), /Durée invalide/);
+  expectOpError(() => ops.updateSettings(db, ctxFor(db, 'admin'), { sessionMinutes: 999 }), /Durée de verrouillage invalide/);
   expectOpError(() => ops.updateSettings(db, ctxFor(db, 'mgrParis'), { sessionMinutes: 5 }), /non autorisée/);
 });
 
@@ -429,7 +429,7 @@ test('invariants : stock = initial + Σ deltas, jamais négatif, conservation de
   const users = ['admin', 'mgrParis', 'opParis', 'mgrLyon', 'opLyon'];
   let external = 0; // entrées - sorties (seules variations de la quantité totale hors transferts/inventaire)
   let applied = 0, refused = 0;
-  const inTransit = () => db.transfers.filter((t) => t.status === 'pending').reduce((s, t) => s + t.qty, 0);
+  const inTransit = () => Object.values(db.transfers).filter((t) => t.status === 'pending').reduce((s, t) => s + t.qty, 0);
   const total = () => Object.keys(db.depots).reduce((s, d) => s + Object.values(db.stocks[d]).reduce((a, b) => a + b, 0), 0);
   const startTotal = total();
   let adjustDelta = 0;
@@ -444,9 +444,9 @@ test('invariants : stock = initial + Σ deltas, jamais négatif, conservation de
       if (roll < 0.3) { const r = ops.moveStock(db, ctx, { type: 'in', ean, qty }); external += qty; applied++; }
       else if (roll < 0.55) { ops.moveStock(db, ctx, { type: 'out', ean, qty }); external -= qty; applied++; }
       else if (roll < 0.7) { ops.createTransfer(db, ctx, { ean, qty, toDepotId: ctx.depotId === IDS.paris ? IDS.lyon : IDS.paris }); applied++; }
-      else if (roll < 0.82) { const t = db.transfers.filter((x) => x.status === 'pending'); if (t.length) { ops.receiveTransfer(db, { ...ctxFor(db, 'admin'), now: ctx.now }, t[Math.floor(rnd() * t.length)].id); applied++; } }
-      else if (roll < 0.88) { const t = db.transfers.filter((x) => x.status === 'pending'); if (t.length) { ops.cancelTransfer(db, { ...ctxFor(db, 'admin'), now: ctx.now }, t[Math.floor(rnd() * t.length)].id); applied++; } }
-      else if (roll < 0.92) { const t = db.transfers.filter((x) => x.status === 'pending'); if (t.length) { ops.refuseTransfer(db, { ...ctxFor(db, 'admin'), now: ctx.now }, t[Math.floor(rnd() * t.length)].id); applied++; } }
+      else if (roll < 0.82) { const t = Object.values(db.transfers).filter((x) => x.status === 'pending'); if (t.length) { ops.receiveTransfer(db, { ...ctxFor(db, 'admin'), now: ctx.now }, t[Math.floor(rnd() * t.length)].id); applied++; } }
+      else if (roll < 0.88) { const t = Object.values(db.transfers).filter((x) => x.status === 'pending'); if (t.length) { ops.cancelTransfer(db, { ...ctxFor(db, 'admin'), now: ctx.now }, t[Math.floor(rnd() * t.length)].id); applied++; } }
+      else if (roll < 0.92) { const t = Object.values(db.transfers).filter((x) => x.status === 'pending'); if (t.length) { ops.refuseTransfer(db, { ...ctxFor(db, 'admin'), now: ctx.now }, t[Math.floor(rnd() * t.length)].id); applied++; } }
       else if (roll < 0.96) { const cur = stockOf(db, ctx.depotId, ean); const r = ops.adjustStock(db, { ...ctxFor(db, 'admin', { depotId: ctx.depotId }), now: ctx.now }, { ean, qty: Math.max(0, cur + Math.floor(rnd() * 11) - 5) }); adjustDelta += r.diff; applied++; }
       else { const h = db.history.find((x) => (x.type === 'in' || x.type === 'out') && !x.undone && !x.undoOf); if (h) { const cur = db.history.length; ops.undoMovement(db, { ...ctxFor(db, 'admin', { depotId: h.depotId }), now: ctx.now }, h.id); external -= h.delta; applied++; } }
     } catch (e) {
@@ -465,7 +465,7 @@ test('invariants : stock = initial + Σ deltas, jamais négatif, conservation de
   // 2) conservation : total + en transit = départ + entrées − sorties + corrections
   assert.equal(total() + inTransit(), startTotal + external + adjustDelta, 'conservation des unités');
   // 3) chaque transfert terminé est cohérent
-  for (const t of db.transfers) assert.ok(['pending', 'done', 'cancelled', 'refused'].includes(t.status));
+  for (const t of Object.values(db.transfers)) assert.ok(['pending', 'done', 'cancelled', 'refused'].includes(t.status));
   assert.ok(db.history.length <= LIMITS.history && db.audit.length <= LIMITS.audit);
   assert.ok(totalStock(db, EAN.zip) >= 0);
 });

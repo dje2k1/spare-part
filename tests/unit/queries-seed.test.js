@@ -35,8 +35,13 @@ test('utilitaires de base', () => {
   assert.equal(q.stockOf(db, IDS.paris, EAN.zip), 20);
   assert.equal(q.stockOf(db, IDS.paris, 'inconnu'), 0);
   assert.equal(q.totalStock(db, EAN.zip), 25);
-  assert.deepEqual([q.statusOf(db.articles[EAN.zip], 0), q.statusOf(db.articles[EAN.zip], 10), q.statusOf(db.articles[EAN.zip], 11)], ['zero', 'low', 'ok']);
-  assert.equal(q.isAlert(db.articles[EAN.clasp], 0), false, 'sans seuil : pas d\'alerte');
+  assert.deepEqual([q.stockStatus(10, 0), q.stockStatus(10, 10), q.stockStatus(10, 11)], ['zero', 'low', 'ok']);
+  assert.equal(q.isLow(0, 0), false, 'sans seuil : pas d\'alerte');
+  assert.deepEqual(q.levelOf(db, IDS.paris, db.articles[EAN.zip]), { min: 10, max: 20, source: 'article' }, 'seuil de la fiche, max = 2 × seuil');
+  db.levels[IDS.paris] = { [EAN.zip]: { min: 4, max: 12 } };
+  assert.deepEqual(q.levelOf(db, IDS.paris, db.articles[EAN.zip]), { min: 4, max: 12, source: 'depot' }, 'seuil propre au dépôt prioritaire');
+  assert.deepEqual(q.levelOf(db, IDS.lyon, db.articles[EAN.zip]).source, 'article', 'les autres dépôts gardent le seuil de la fiche');
+  assert.equal(q.statusIn(db, IDS.paris, db.articles[EAN.zip]), 'ok');
   assert.deepEqual(q.families(db), ['Boutons', 'Fermoirs', 'Zips']);
   assert.deepEqual(q.articleLocations(db, EAN.zip, IDS.paris).map(q.locCode), ['R1-A1-E1-C1']);
   assert.deepEqual(q.articleLocations(db, EAN.zip, IDS.lyon), []);
@@ -180,13 +185,13 @@ test('plan : cellules hétérogènes (cases multiples, allées manquantes)', () 
 test('transferts : vue entrante / sortante / passée, délai moyen', () => {
   const db = smallDb();
   const t = (id, from, to, status, date, extra = {}) => ({ id, ean: EAN.zip, name: 'Zip', qty: 1, fromDepotId: from, fromDepotName: 'x', toDepotId: to, toDepotName: 'y', operator: 'o', date, status, ...extra });
-  db.transfers = [
+  db.transfers = Object.fromEntries([
     t('transfer0001', IDS.lyon, IDS.paris, 'pending', ago(DAY)),
     t('transfer0002', IDS.paris, IDS.lyon, 'pending', ago(2 * DAY)),
     t('transfer0003', IDS.paris, IDS.lyon, 'done', ago(5 * DAY), { receivedDate: ago(5 * DAY - 10 * 3600_000) }),
     t('transfer0004', IDS.paris, IDS.lyon, 'done', ago(8 * DAY), { receivedDate: ago(8 * DAY - 20 * 3600_000) }),
     t('transfer0005', IDS.paris, IDS.lyon, 'cancelled', ago(9 * DAY)),
-  ];
+  ].map((x) => [x.id, x]));
   const o = q.transferOverview(db, IDS.paris, NOW);
   assert.deepEqual([o.incoming.length, o.outgoing.length, o.past.length], [1, 1, 3]);
   assert.equal(o.avgDelayHours, 15);
@@ -223,27 +228,38 @@ test('daysSince', () => {
 // ── Démo ──
 const FAST = { pinIterations: 1000 };
 
-test('démo : jeu de données complet, déterministe, relatif à « maintenant »', async () => {
+const byCode = (db, code) => Object.values(db.depots).find((d) => d.code === code);
+
+test('démo : simulation complète, déterministe, relative à « maintenant »', async () => {
   const db = await buildDemoDb(NOW, FAST);
   assert.equal(db.meta.demo, true);
-  assert.equal(Object.keys(db.depots).length, 3);
-  assert.equal(Object.keys(db.users).length, 5);
+  assert.deepEqual(Object.values(db.depots).map((d) => [d.code, d.kind]), [['CEN', 'central'], ['DEP-01', 'atelier'], ['DEP-02', 'atelier'], ['DEP-03', 'atelier']]);
+  assert.equal(Object.keys(db.users).length, 7);
   assert.equal(Object.keys(db.articles).length, 17);
-  assert.equal(Object.keys(db.locations).length, 36);
-  assert.ok(db.history.length > 100, `${db.history.length} mouvements`);
-  assert.equal(db.transfers.length, 4);
-  assert.deepEqual(db.meta.demoPins.map((p) => p.pin), ['1234', '2345', '3456', '4567', '5678']);
+  assert.equal(Object.keys(db.suppliers).length, 4);
+  assert.equal(Object.keys(db.locations).length, 48);
+  assert.ok(Object.values(db.articles).every((a) => db.suppliers[a.supplierId] && a.pack >= 1));
+  assert.deepEqual(db.meta.demoPins.map((p) => p.pin), ['1234', '2345', '3456', '4567', '5678', '2468', '1357']);
   for (const a of Object.values(db.articles)) assert.equal(hasValidCheck(a.ean), true, `EAN ${a.ean} : clé GS1 invalide`);
   const dates = db.history.map((h) => new Date(h.date).getTime());
   assert.ok(Math.max(...dates) <= NOW.getTime());
-  assert.ok(Math.min(...dates) >= NOW.getTime() - 46 * DAY);
   assert.ok(dates.some((d) => NOW.getTime() - d < DAY), 'activité aujourd\'hui ou hier');
-  const paris = Object.values(db.depots)[0].id;
-  assert.ok(q.pendingIncoming(db, paris).length >= 1, 'un transfert à réceptionner côté Paris');
-  assert.ok(q.kpis(db, paris, { days: 30, now: NOW }).alerts >= 2, 'des alertes visibles');
+  // Commandes dans tous les états utiles à la démonstration
+  const states = new Set(Object.values(db.orders).map((o) => `${o.kind}:${o.status}`));
+  for (const s of ['internal:submitted', 'internal:shipped', 'internal:received', 'supplier:sent', 'supplier:received']) assert.ok(states.has(s), s);
+  const paris = byCode(db, 'DEP-01');
+  assert.ok(Object.values(db.orders).some((o) => o.depotId === paris.id && o.status === 'shipped'), 'une livraison à réceptionner à Paris');
+  assert.ok(q.pendingIncoming(db, paris.id).length >= 1, 'un transfert à réceptionner côté Paris');
+  // Consommation enregistrée → seuils intelligents calculables, délais mesurés
+  assert.ok(Object.keys(db.usage[paris.id] ?? {}).length >= 10);
+  assert.ok(Object.values(db.orders).filter((o) => o.kind === 'internal' && o.status === 'received').length >= 20);
+  // Les niveaux de service sont réalistes : l'entrepôt sert les ateliers
+  const served = Object.values(db.orders).filter((o) => o.kind === 'internal' && o.shippedAt);
+  const ratio = served.reduce((n, o) => n + o.lines.reduce((m, l) => m + (l.shipped ?? 0), 0), 0) / served.reduce((n, o) => n + o.lines.reduce((m, l) => m + l.qty, 0), 0);
+  assert.ok(ratio > 0.85, `taux de service ${ratio}`);
   const again = await buildDemoDb(NOW, FAST);
-  assert.deepEqual(Object.values(again.articles).map((a) => [a.ean, a.name]), Object.values(db.articles).map((a) => [a.ean, a.name]));
   assert.equal(again.history.length, db.history.length, 'même scénario à chaque installation');
+  assert.deepEqual(Object.values(again.orders).map((o) => o.status).sort(), Object.values(db.orders).map((o) => o.status).sort());
 });
 
 test('démo : cohérence stock ↔ historique (jamais négatif) et PIN vérifiables', async () => {
@@ -252,11 +268,11 @@ test('démo : cohérence stock ↔ historique (jamais négatif) et PIN vérifiab
     const hist = db.history.filter((h) => h.depotId === d && h.ean === a).sort((x, y) => x.date.localeCompare(y.date));
     const now = db.stocks[d][a];
     let s = now - hist.reduce((t, h) => t + h.delta, 0);
-    assert.ok(s >= 0, `stock initial négatif (${d}, ${a}) : ${s}`);
+    assert.ok(s >= 0, `stock de départ négatif (${d}, ${a}) : ${s}`);
     for (const h of hist) { s += h.delta; assert.ok(s >= 0, `stock négatif en cours de route (${d}, ${a})`); }
     assert.equal(s, now);
   }
-  for (const [name, pin] of [['Administrateur', '1234'], ['Pierre Blanc', '5678']]) {
+  for (const [name, pin] of [['Administrateur', '1234'], ['Pierre Blanc', '5678'], ['Karim Benali', '2468']]) {
     const u = Object.values(db.users).find((x) => x.name === name);
     assert.equal(await verifyPin(u.pin, pin), true, name);
     assert.equal(await verifyPin(u.pin, '0000'), false);
@@ -268,10 +284,10 @@ test('démo : traverse normalizeDb sans aucune perte (JSON → base)', async () 
   const db = await buildDemoDb(NOW, FAST);
   const { db: back, notes } = normalizeDb(JSON.parse(JSON.stringify(db)), NOW);
   assert.deepEqual(notes, []);
-  for (const k of ['depots', 'users', 'articles', 'locations']) assert.equal(Object.keys(back[k]).length, Object.keys(db[k]).length, k);
+  for (const k of ['depots', 'users', 'articles', 'locations', 'suppliers', 'transfers']) assert.equal(Object.keys(back[k]).length, Object.keys(db[k]).length, k);
+  for (const k of ['orders', 'levels', 'usage', 'stocks']) assert.deepEqual(back[k], JSON.parse(JSON.stringify(db[k])), k);
   assert.equal(back.history.length, db.history.length);
   assert.equal(back.audit.length, db.audit.length);
-  assert.equal(back.transfers.length, 4);
   assert.deepEqual(back.meta.demoPins, db.meta.demoPins);
   assert.ok(back.history.every((h) => Number.isFinite(h.delta)));
 });
@@ -295,6 +311,7 @@ test('installation vide : un dépôt, un administrateur, PIN haché', async () =
   assert.equal(db.meta.demo, false);
   assert.equal(db.meta.demoPins, undefined);
   assert.equal(Object.keys(db.depots).length, 1);
+  assert.equal(Object.values(db.depots)[0].kind, 'atelier');
   const u = Object.values(db.users)[0];
   assert.deepEqual([u.name, u.role], ['Camille', 'admin']);
   assert.equal(await verifyPin(u.pin, '860214'), true);

@@ -10,9 +10,23 @@ const nat = (a, b) => String(a).localeCompare(String(b), 'fr', { numeric: true, 
 export const locCode = (l) => (l ? [l.rack, l.allee, l.etagere, l.case].filter(Boolean).join('-') : '');
 export const stockOf = (db, depotId, ean) => db.stocks[depotId]?.[ean] ?? 0;
 export const totalStock = (db, ean) => Object.keys(db.depots).reduce((s, d) => s + stockOf(db, d, ean), 0);
-export const isAlert = (a, qty) => a.threshold > 0 && qty <= a.threshold;
-/** 'zero' (épuisé) · 'low' (sous le seuil d'alerte) · 'ok' */
-export const statusOf = (a, qty) => (qty === 0 ? 'zero' : isAlert(a, qty) ? 'low' : 'ok');
+/**
+ * Seuils d'un article DANS un dépôt : réglage propre au dépôt (seuils intelligents appliqués, saisie manuelle)
+ * sinon seuil par défaut de la fiche article (max = 2 × min).
+ * @returns {{min:number, max:number, source:'depot'|'article'}}
+ */
+export function levelOf(db, depotId, article) {
+  const o = db.levels?.[depotId]?.[article.ean];
+  if (o) return { min: o.min, max: Math.max(o.min, o.max), source: 'depot' };
+  const min = article.threshold || 0;
+  return { min, max: min * 2, source: 'article' };
+}
+/** Sous le seuil (minimum) ? Un seuil à 0 = article non suivi. */
+export const isLow = (min, qty) => min > 0 && qty <= min;
+/** 'zero' (épuisé) · 'low' (sous le seuil) · 'ok' */
+export const stockStatus = (min, qty) => (qty === 0 ? 'zero' : isLow(min, qty) ? 'low' : 'ok');
+/** Raccourci : statut d'un article dans un dépôt. */
+export const statusIn = (db, depotId, article) => stockStatus(levelOf(db, depotId, article).min, stockOf(db, depotId, article.ean));
 
 /** Emplacements d'un article dans un dépôt, l'emplacement par défaut en premier. */
 export function articleLocations(db, ean, depotId) {
@@ -35,13 +49,14 @@ export function searchArticles(db, depotId, { q = '', filter = 'all', family = '
   const rows = [];
   for (const article of Object.values(db.articles)) {
     const qty = stockOf(db, depotId, article.ean);
-    const status = statusOf(article, qty);
-    if (filter === 'alert' && !isAlert(article, qty)) continue;
+    const { min, max } = levelOf(db, depotId, article);
+    const status = stockStatus(min, qty);
+    if (filter === 'alert' && !isLow(min, qty)) continue;
     if (filter === 'zero' && qty !== 0) continue;
     if (family && article.family !== family) continue;
     const locs = articleLocations(db, article.ean, depotId);
     if (q && !matches(q, article.name, article.ean, article.ref, article.family, locs.map(locCode).join(' '))) continue;
-    rows.push({ article, qty, status, locs });
+    rows.push({ article, qty, status, locs, min, max });
   }
   const code = (r) => (r.locs[0] ? locCode(r.locs[0]) : '￿');
   const cmp = {
@@ -61,9 +76,10 @@ export function kpis(db, depotId, { days = 30, now = new Date() } = {}) {
   for (const a of arts) {
     const q = stockOf(db, depotId, a.ean);
     units += q; value += q * (a.price || 0);
-    if (isAlert(a, q)) alerts++;
+    const { min } = levelOf(db, depotId, a);
+    if (isLow(min, q)) alerts++;
     if (q === 0) zeros++;
-    if (a.threshold > 0) { tracked++; if (q > a.threshold) healthy++; }
+    if (min > 0) { tracked++; if (q > min) healthy++; }
   }
   let ins = 0, outs = 0, moves = 0, net = 0;
   for (const h of db.history) {
@@ -171,17 +187,44 @@ export function depotComparison(db, now = new Date()) {
 }
 
 // ── Réassort ──
-/** Articles sous leur seuil avec une quantité suggérée (objectif = 2 × seuil). */
-export function reorderList(db, depotId) {
+const OPEN_INTERNAL = ['draft', 'submitted', 'picking', 'shipped'];
+const OPEN_SUPPLIER = ['sent', 'partial'];
+/**
+ * Quantité déjà en route vers un dépôt pour un article : commandes internes envoyées/en préparation
+ * (quantité demandée), expédiées (quantité expédiée non encore reçue), commandes fournisseurs ouvertes
+ * (reste à recevoir). `withDraft` : compte aussi le brouillon (ne pas proposer deux fois la même pièce).
+ */
+export function incomingQty(db, depotId, ean, { withDraft = false } = {}) {
+  let n = 0;
+  for (const o of Object.values(db.orders ?? {})) {
+    if (o.depotId !== depotId) continue;
+    if (o.kind === 'internal' ? !OPEN_INTERNAL.includes(o.status) || (o.status === 'draft' && !withDraft) : !OPEN_SUPPLIER.includes(o.status)) continue;
+    for (const l of o.lines) {
+      if (l.ean !== ean) continue;
+      if (o.kind === 'supplier') n += Math.max(0, l.qty - (l.received ?? 0));
+      else n += o.status === 'shipped' ? Math.max(0, (l.shipped ?? 0) - (l.received ?? 0)) : l.qty;
+    }
+  }
+  return n;
+}
+const roundUp = (n, pack) => (pack > 1 ? Math.ceil(n / pack) * pack : n);
+
+/**
+ * Réassort : articles sous leur seuil (en tenant compte de ce qui est déjà en route), quantité suggérée
+ * pour remonter au maximum, arrondie au conditionnement.
+ */
+export function reorderList(db, depotId, { withDraft = false } = {}) {
   const rows = [];
   for (const a of Object.values(db.articles)) {
     const qty = stockOf(db, depotId, a.ean);
-    if (!isAlert(a, qty)) continue;
-    const target = a.threshold * 2;
-    const suggested = Math.max(1, target - qty);
-    rows.push({ article: a, qty, threshold: a.threshold, target, suggested, cost: suggested * (a.price || 0), locs: articleLocations(db, a.ean, depotId) });
+    const { min, max } = levelOf(db, depotId, a);
+    if (min <= 0) continue;
+    const incoming = incomingQty(db, depotId, a.ean, { withDraft });
+    if (qty + incoming > min) continue;
+    const suggested = roundUp(Math.max(1, max - qty - incoming), a.pack || 1);
+    rows.push({ article: a, qty, min, max, threshold: min, target: max, incoming, suggested, cost: suggested * (a.price || 0), locs: articleLocations(db, a.ean, depotId) });
   }
-  return rows.sort((x, y) => x.qty / x.threshold - y.qty / y.threshold || nat(x.article.name, y.article.name));
+  return rows.sort((x, y) => x.qty / x.min - y.qty / y.min || nat(x.article.name, y.article.name));
 }
 
 // ── Plan des emplacements ──
@@ -196,7 +239,7 @@ export function planModel(db, depotId) {
   for (const l of locs) {
     const here = arts.filter((a) => (a.locations?.[depotId] ?? []).includes(l.id));
     const units = here.reduce((s, a) => s + stockOf(db, depotId, a.ean), 0);
-    const alerts = here.filter((a) => isAlert(a, stockOf(db, depotId, a.ean))).length;
+    const alerts = here.filter((a) => isLow(levelOf(db, depotId, a).min, stockOf(db, depotId, a.ean))).length;
     const state = !here.length ? 'empty' : units === 0 ? 'zero' : alerts ? 'alert' : 'ok';
     stats.set(l.id, { loc: l, refs: here.length, units, alerts, state });
   }
@@ -239,11 +282,11 @@ export function articlesAt(db, depotId, locId) {
 }
 
 // ── Transferts ──
-export const pendingIncoming = (db, depotId) => db.transfers.filter((t) => t.status === 'pending' && t.toDepotId === depotId);
-export const pendingOutgoing = (db, depotId) => db.transfers.filter((t) => t.status === 'pending' && t.fromDepotId === depotId);
+export const pendingIncoming = (db, depotId) => Object.values(db.transfers).filter((t) => t.status === 'pending' && t.toDepotId === depotId);
+export const pendingOutgoing = (db, depotId) => Object.values(db.transfers).filter((t) => t.status === 'pending' && t.fromDepotId === depotId);
 
 export function transferOverview(db, depotId, now = new Date()) {
-  const mine = db.transfers.filter((t) => t.fromDepotId === depotId || t.toDepotId === depotId);
+  const mine = Object.values(db.transfers).filter((t) => t.fromDepotId === depotId || t.toDepotId === depotId);
   const byDate = (a, b) => b.date.localeCompare(a.date);
   const done = mine.filter((t) => t.status === 'done');
   const delays = done.filter((t) => t.receivedDate).map((t) => (new Date(t.receivedDate) - new Date(t.date)) / 3_600_000);

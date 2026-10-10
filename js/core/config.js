@@ -1,8 +1,8 @@
 // Constantes de l'application : version, clés de stockage, limites, rôles et permissions.
 
-export const APP_VERSION = '2.0.0';
-export const APP_LABEL = 'Version 2'; // pastille affichée sur l'accueil
-export const DB_VERSION = 5;
+export const APP_VERSION = '3.0.0';
+export const APP_LABEL = 'Version 3'; // pastille affichée sur l'accueil
+export const DB_VERSION = 6;
 
 export const KEYS = {
   db: 'mode_stock_v5',
@@ -13,6 +13,12 @@ export const KEYS = {
   apiKey: 'mode_anthropic_api_key', // même clé que index2.html : une clé déjà saisie reste valable
   legacyApiKeys: ['mode_anthropic_key'],
   session: 'mode_inventory_draft',
+  // Synchronisation (mode serveur)
+  syncQueue: 'mode_sync_queue', // opérations en attente d'envoi (survit à la fermeture de l'application)
+  syncState: 'mode_sync_state', // version confirmée + session serveur
+  knownUsers: 'mode_known_users', // empreintes des comptes déjà connectés sur CET appareil (déverrouillage hors ligne)
+  orgCode: 'mode_org_code',
+  briefing: 'mode_briefing_seen',
 };
 
 export const LIMITS = {
@@ -34,8 +40,10 @@ export const ROLES = {
   operator: { label: 'Opérateur', hint: 'Entrées, sorties, transferts' },
 };
 
-const OPERATOR = ['move', 'transfer.create', 'transfer.receive', 'article.create'];
-const MANAGER = [...OPERATOR, 'article.edit', 'stock.adjust', 'inventory', 'import', 'export', 'audit.view', 'location.edit', 'transfer.cancel', 'labels'];
+// order.fulfil (préparer/expédier) n'est utilisable que par le personnel de l'entrepôt central : contrôlé dans ops-orders.js.
+const OPERATOR = ['move', 'transfer.create', 'transfer.receive', 'article.create', 'order.request', 'order.receive', 'order.fulfil', 'labels'];
+const MANAGER = [...OPERATOR, 'article.edit', 'stock.adjust', 'inventory', 'import', 'export', 'audit.view', 'location.edit', 'transfer.cancel',
+  'order.manage', 'purchase.manage', 'supplier.manage', 'levels.manage', 'reports'];
 const ADMIN = [...MANAGER, 'user.manage', 'depot.manage', 'data.manage', 'depot.any'];
 export const PERMISSIONS = {
   operator: new Set(OPERATOR),
@@ -59,11 +67,31 @@ export const REASONS = {
 };
 
 export const AUDIT_TYPES = {
-  in: 'Entrées', out: 'Sorties', inv: 'Inventaires', transfer: 'Transferts', login: 'Connexions', admin: 'Administration',
+  in: 'Entrées', out: 'Sorties', inv: 'Inventaires', transfer: 'Transferts', order: 'Commandes', login: 'Connexions', admin: 'Administration',
 };
 
 export const TRANSFER_STATUS = {
   pending: 'En transit', done: 'Reçu', cancelled: 'Annulé', refused: 'Refusé',
 };
 
-export const DEFAULT_SETTINGS = { sessionMinutes: 15 };
+export const DEPOT_KINDS = {
+  atelier: { label: 'Atelier', hint: 'Consomme les pièces, commande à l\'entrepôt central' },
+  central: { label: 'Entrepôt central', hint: 'Approvisionne les ateliers, commande aux fournisseurs' },
+};
+
+/** Commandes : internes (atelier → entrepôt central) et fournisseurs (entrepôt central → fournisseur). */
+export const ORDER_STATUS = {
+  draft: 'Brouillon', submitted: 'Envoyée', picking: 'En préparation', shipped: 'Expédiée',
+  received: 'Reçue', cancelled: 'Annulée', sent: 'Envoyée au fournisseur', partial: 'Reçue en partie', closed: 'Soldée',
+};
+export const ORDER_LIMITS = { lines: 500 };
+
+export const DEFAULT_SETTINGS = {
+  sessionMinutes: 15,
+  leadDaysInternal: 2, // délai entrepôt → atelier (remplacé par le délai mesuré dès qu'il existe)
+  leadDaysSupplier: 14, // délai fournisseur par défaut (fiche fournisseur prioritaire)
+  coverDaysAtelier: 14, // stock maximum d'un atelier = seuil + N jours de consommation
+  coverDaysCentral: 30,
+  serviceLevel: 95, // % : probabilité de ne pas être en rupture pendant le délai de réapprovisionnement
+  briefing: true, // « Votre journée » à la première ouverture du jour
+};

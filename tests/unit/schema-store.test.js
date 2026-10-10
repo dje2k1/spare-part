@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { emptyDb, normalizeDb, deriveDelta, makeBackup, parseBackup } from '../../js/core/schema.js';
 import { createStore } from '../../js/core/store.js';
-import { KEYS, LIMITS } from '../../js/core/config.js';
-import { OpError } from '../../js/core/ops.js';
+import { KEYS, LIMITS, DB_VERSION } from '../../js/core/config.js';
+import { OpError } from '../../js/core/ops-kit.js';
 import { NOW, memoryStorage, smallDb, FAKE_PIN, IDS, EAN } from './helpers.js';
 
 const legacy = () => JSON.parse(readFileSync(new URL('../fixtures/dior_v4.json', import.meta.url), 'utf8'));
@@ -15,12 +15,14 @@ test('normalizeDb refuse ce qui n\'est pas un objet', () => {
 
 test('migration du VRAI jeu de données dior_v4 (démo d\'origine)', () => {
   const { db, notes } = normalizeDb(legacy(), NOW);
-  assert.equal(db.v, 5);
+  assert.equal(db.v, DB_VERSION);
   assert.equal(Object.keys(db.depots).length, 3);
   assert.equal(Object.keys(db.users).length, 5);
   assert.equal(Object.keys(db.articles).length, 17);
   assert.equal(db.history.length, 83);
-  assert.equal(db.transfers.length, 3);
+  assert.equal(Object.keys(db.transfers).length, 3);
+  assert.ok(Object.values(db.depots).every((d) => d.kind === 'atelier'), 'v5 → v6 : dépôts « atelier » par défaut');
+  assert.ok(Object.keys(db.usage).length > 0, 'consommation reconstruite depuis l\'historique');
   assert.ok(notes.some((n) => /migrées/.test(n)));
   // PIN en clair → conservés uniquement pour être hachés au démarrage
   const admin = Object.values(db.users).find((u) => u.role === 'admin');
@@ -135,7 +137,7 @@ test('store : migration dior_v4 → v5, ancienne copie (PIN en clair) supprimée
   assert.equal(storage.getItem(KEYS.legacyDb), null, 'copie en clair supprimée');
   assert.ok(storage.getItem(KEYS.db));
   assert.ok(!storage.getItem(KEYS.db).includes('"pin":"1234"'), 'aucun PIN en clair dans la base v5');
-  assert.equal(JSON.parse(storage.getItem(KEYS.db)).v, 5);
+  assert.equal(JSON.parse(storage.getItem(KEYS.db)).v, DB_VERSION);
 });
 
 test('store : données illisibles → quarantaine, jamais écrasées', () => {

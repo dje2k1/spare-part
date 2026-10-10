@@ -32,6 +32,15 @@ export async function verifyPin(record, pin) {
   return sameString(r.hash, record.hash);
 }
 
+/** Empreinte de PIN bien formée (contrôle des données venant d'un autre appareil ou d'une sauvegarde). */
+export function isPinRecord(p) {
+  return Boolean(p) && typeof p === 'object' && p.alg === 'PBKDF2-SHA256'
+    && typeof p.salt === 'string' && /^[A-Za-z0-9+/=]{8,200}$/.test(p.salt)
+    && typeof p.hash === 'string' && /^[A-Za-z0-9+/=]{20,200}$/.test(p.hash)
+    && Number.isInteger(p.iter) && p.iter >= 10_000 && p.iter <= 10_000_000
+    && (p.len === undefined || (Number.isInteger(p.len) && p.len >= 0 && p.len <= 8));
+}
+
 /** Hache les PIN encore en clair (migration depuis dior_v4). @returns nombre de PIN migrés */
 export async function upgradeLegacyPins(db) {
   let n = 0;

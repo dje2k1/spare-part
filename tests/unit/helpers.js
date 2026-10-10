@@ -31,15 +31,15 @@ export const EAN = { zip: '3700089690011', button: '4006381333931', clasp: '5901
 /** Petite base : 2 dépôts, 5 utilisateurs, 3 articles, 3 emplacements. */
 export function smallDb(now = NOW) {
   const db = emptyDb(now);
-  db.depots[IDS.paris] = { id: IDS.paris, name: 'Atelier Paris', location: 'Paris', code: 'DEP-01' };
-  db.depots[IDS.lyon] = { id: IDS.lyon, name: 'Atelier Lyon', location: 'Lyon', code: 'DEP-02' };
+  db.depots[IDS.paris] = { id: IDS.paris, name: 'Atelier Paris', location: 'Paris', code: 'DEP-01', kind: 'atelier' };
+  db.depots[IDS.lyon] = { id: IDS.lyon, name: 'Atelier Lyon', location: 'Lyon', code: 'DEP-02', kind: 'atelier' };
   const user = (id, name, role, depotId) => { db.users[id] = { id, name, role, depotId, pin: { ...FAKE_PIN } }; };
   user(IDS.admin, 'Administrateur', 'admin', IDS.paris);
   user(IDS.mgrParis, 'Sophie Martin', 'manager', IDS.paris);
   user(IDS.opParis, 'Julie Laurent', 'operator', IDS.paris);
   user(IDS.mgrLyon, 'Marc Dubois', 'manager', IDS.lyon);
   user(IDS.opLyon, 'Pierre Blanc', 'operator', IDS.lyon);
-  const art = (ean, name, family, price, threshold) => { db.articles[ean] = { ean, name, family, ref: '', price, threshold, photo: '', locations: {} }; };
+  const art = (ean, name, family, price, threshold) => { db.articles[ean] = { ean, name, family, ref: '', price, threshold, photo: '', supplierId: '', supplierRef: '', pack: 1, locations: {} }; };
   art(EAN.zip, 'Zip YKK 20cm', 'Zips', 1.6, 10);
   art(EAN.button, 'Bouton doré', 'Boutons', 1.2, 5);
   art(EAN.clasp, 'Fermoir clip', 'Fermoirs', 4.2, 0);
@@ -70,3 +70,18 @@ export function expectOpError(fn, pattern) {
 
 /** PRNG déterministe. */
 export const prng = (seed) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+
+/** Organisation complète : smallDb + entrepôt central (stock, 2 personnes) + 1 fournisseur. */
+export const ORG = { central: 'depotcentral', karim: 'usermgrcen01', lea: 'useropscen01', ykk: 'supplierykk1' };
+export function orgDb(now = NOW) {
+  const db = smallDb(now);
+  db.depots[ORG.central] = { id: ORG.central, name: 'Entrepôt central', location: 'Orly', code: 'CEN', kind: 'central' };
+  db.stocks[ORG.central] = { [EAN.zip]: 200, [EAN.button]: 15, [EAN.clasp]: 40 };
+  db.users[ORG.karim] = { id: ORG.karim, name: 'Karim Benali', role: 'manager', depotId: ORG.central, pin: { ...FAKE_PIN } };
+  db.users[ORG.lea] = { id: ORG.lea, name: 'Léa Moreau', role: 'operator', depotId: ORG.central, pin: { ...FAKE_PIN } };
+  db.suppliers[ORG.ykk] = { id: ORG.ykk, name: 'YKK France', email: 'adv@ykk.example', phone: '', note: '', leadDays: 10 };
+  db.articles[EAN.zip].supplierId = ORG.ykk;
+  db.articles[EAN.zip].pack = 10;
+  IDS.karim = ORG.karim; IDS.lea = ORG.lea;
+  return db;
+}

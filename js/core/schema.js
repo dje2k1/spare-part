@@ -1,16 +1,20 @@
-// Schéma de la base (v5) : création, migration depuis l'ancien format (dior_v4) et assainissement.
+// Schéma de la base (v6) : création, migrations (dior_v4 → v5 → v6) et assainissement.
+// v6 : entrepôt central / ateliers, fournisseurs, commandes, seuils par dépôt, consommation hebdomadaire,
+//      transferts indexés par identifiant.
 // `normalizeDb` ne fait confiance à rien : il sert aussi à valider les sauvegardes importées.
-import { DB_VERSION, LIMITS, ROLES, DEFAULT_SETTINGS, MOVES } from './config.js';
+import { DB_VERSION, LIMITS, ROLES, DEFAULT_SETTINGS, MOVES, DEPOT_KINDS, ORDER_STATUS, ORDER_LIMITS, AUDIT_TYPES } from './config.js';
 import { isCode } from '../lib/ean.js';
 import { isImageDataUrl } from '../lib/image.js';
 import { isUid, uid } from '../lib/id.js';
 import { toInt } from '../lib/text.js';
+import { weekOf, USAGE_WEEKS } from './ops-kit.js';
 
 export function emptyDb(now = new Date()) {
   return {
     v: DB_VERSION,
-    meta: { createdAt: now.toISOString(), demo: false, lastBackupAt: null, lastBackupRev: 0, rev: 0, settings: { ...DEFAULT_SETTINGS } },
-    depots: {}, users: {}, articles: {}, stocks: {}, locations: {}, history: [], transfers: [], audit: [],
+    meta: { createdAt: now.toISOString(), demo: false, lastBackupAt: null, lastBackupRev: 0, rev: 0, orderSeq: 0, purchaseSeq: 0, settings: { ...DEFAULT_SETTINGS } },
+    depots: {}, users: {}, articles: {}, stocks: {}, levels: {}, usage: {}, locations: {}, suppliers: {}, orders: {},
+    transfers: {}, history: [], audit: [],
   };
 }
 
@@ -49,7 +53,7 @@ function normPin(u) {
  * Assainit n'importe quelle donnée (stockage, migration v4, sauvegarde importée).
  * @returns {{db: object, notes: string[]}} base valide + remarques (éléments écartés/corrigés)
  */
-export function normalizeDb(raw, now = new Date()) {
+export function normalizeDb(raw, now = new Date(), { limits = LIMITS } = {}) {
   const notes = [];
   if (!isObj(raw)) throw new Error('Format de données invalide');
   const out = emptyDb(now);
@@ -67,9 +71,20 @@ export function normalizeDb(raw, now = new Date()) {
     out.meta.lastBackupAt = raw.meta.lastBackupAt ? iso(raw.meta.lastBackupAt, null) : null;
     out.meta.lastBackupRev = nonNeg(raw.meta.lastBackupRev, 1e12);
     out.meta.rev = nonNeg(raw.meta.rev, 1e12);
+    out.meta.orderSeq = nonNeg(raw.meta.orderSeq, 1e9);
+    out.meta.purchaseSeq = nonNeg(raw.meta.purchaseSeq, 1e9);
     const s = isObj(raw.meta.settings) ? raw.meta.settings : {};
-    const sm = toInt(s.sessionMinutes);
-    out.meta.settings.sessionMinutes = Number.isNaN(sm) ? DEFAULT_SETTINGS.sessionMinutes : Math.min(240, Math.max(0, sm));
+    const setting = (key, min, max) => {
+      const v = toInt(s[key]);
+      out.meta.settings[key] = Number.isNaN(v) ? DEFAULT_SETTINGS[key] : Math.min(max, Math.max(min, v));
+    };
+    setting('sessionMinutes', 0, 240);
+    setting('leadDaysInternal', 0, 60);
+    setting('leadDaysSupplier', 0, 180);
+    setting('coverDaysAtelier', 1, 120);
+    setting('coverDaysCentral', 1, 180);
+    setting('serviceLevel', 50, 99);
+    out.meta.settings.briefing = s.briefing === undefined ? DEFAULT_SETTINGS.briefing : s.briefing === true;
   }
 
   // Dépôts
@@ -77,8 +92,23 @@ export function normalizeDb(raw, now = new Date()) {
     const id = safeId(d?.id);
     const name = str(d?.name, LIMITS.short);
     if (!id || !name) { notes.push('dépôt invalide ignoré'); continue; }
-    out.depots[id] = { id, name, location: str(d.location, LIMITS.short), code: str(d.code, 10) };
+    out.depots[id] = { id, name, location: str(d.location, LIMITS.short), code: str(d.code, 10), kind: Object.hasOwn(DEPOT_KINDS, d.kind) ? d.kind : 'atelier' };
     out.stocks[id] = {};
+  }
+  // Un seul entrepôt central (le premier rencontré l'emporte)
+  let centrals = 0;
+  for (const d of Object.values(out.depots)) if (d.kind === 'central' && ++centrals > 1) { d.kind = 'atelier'; notes.push('plusieurs entrepôts centraux : un seul conservé'); }
+
+  // Fournisseurs
+  for (const f of Object.values(isObj(raw.suppliers) ? raw.suppliers : {})) {
+    const id = safeId(f?.id);
+    const name = str(f?.name, LIMITS.short);
+    if (!id || !name) { notes.push('fournisseur invalide ignoré'); continue; }
+    const lead = toInt(f.leadDays);
+    out.suppliers[id] = {
+      id, name, email: str(f.email, 120), phone: str(f.phone, 30), note: str(f.note, 200),
+      leadDays: Number.isNaN(lead) ? null : Math.min(365, Math.max(0, lead)),
+    };
   }
 
   // Emplacements
@@ -108,6 +138,9 @@ export function normalizeDb(raw, now = new Date()) {
       price: Number.isFinite(price) && price >= 0 ? Math.round(Math.min(price, 1e6) * 100) / 100 : 0,
       threshold: nonNeg(a.threshold, 100000),
       photo: isImageDataUrl(a.photo) ? a.photo : '',
+      supplierId: out.suppliers[a.supplierId] ? a.supplierId : '',
+      supplierRef: str(a.supplierRef, LIMITS.ref),
+      pack: Math.max(1, Math.min(10000, nonNeg(a.pack, 10000) || 1)),
       locations,
     };
   }
@@ -116,6 +149,32 @@ export function normalizeDb(raw, now = new Date()) {
   for (const [depotId, map] of Object.entries(isObj(raw.stocks) ? raw.stocks : {})) {
     if (!out.depots[depotId] || !isObj(map)) continue;
     for (const [ean, q] of Object.entries(map)) if (out.articles[ean]) out.stocks[depotId][ean] = nonNeg(q);
+  }
+
+  // Seuils par dépôt
+  for (const [depotId, map] of Object.entries(isObj(raw.levels) ? raw.levels : {})) {
+    if (!out.depots[depotId] || !isObj(map)) continue;
+    for (const [ean, l] of Object.entries(map)) {
+      if (!out.articles[ean] || !isObj(l)) continue;
+      const min = nonNeg(l.min, LIMITS.maxStock);
+      (out.levels[depotId] ??= {})[ean] = { min, max: Math.max(min, nonNeg(l.max, LIMITS.maxStock)) };
+    }
+  }
+
+  // Consommation hebdomadaire (reconstruite depuis l'historique si absente : migration v5 → v6)
+  const nowW = weekOf(now);
+  const keepWeek = (w) => Number.isInteger(w) && w > nowW - USAGE_WEEKS && w <= nowW;
+  if (isObj(raw.usage)) {
+    for (const [depotId, map] of Object.entries(raw.usage)) {
+      if (!out.depots[depotId] || !isObj(map)) continue;
+      for (const [ean, weeks] of Object.entries(map)) {
+        if (!out.articles[ean] || !isObj(weeks)) continue;
+        for (const [w, q] of Object.entries(weeks)) {
+          const n = nonNeg(q);
+          if (keepWeek(Number(w)) && n > 0) ((out.usage[depotId] ??= {})[ean] ??= {})[w] = n;
+        }
+      }
+    }
   }
 
   // Utilisateurs
@@ -141,17 +200,19 @@ export function normalizeDb(raw, now = new Date()) {
     entry.delta = deriveDelta({ ...h, qty: entry.qty });
     if (safeId(h.operatorId)) entry.operatorId = h.operatorId;
     if (safeId(h.transferId)) entry.transferId = h.transferId;
+    if (safeId(h.orderId)) entry.orderId = h.orderId;
     for (const k of ['loc', 'reason', 'note', 'validatedBy']) if (h[k]) entry[k] = str(h[k], LIMITS.name);
     if (h.undone === true) entry.undone = true;
     if (safeId(h.undoOf)) entry.undoOf = h.undoOf;
     return [entry];
   });
   hist.sort((a, b) => b.date.localeCompare(a.date));
-  out.history = hist.slice(0, LIMITS.history);
+  out.history = hist.slice(0, limits.history);
   for (const h of out.history) if (!h.id) h.id = uid();
 
-  // Transferts
-  for (const t of Array.isArray(raw.transfers) ? raw.transfers : []) {
+  // Transferts (tableau en v5, table indexée par identifiant en v6)
+  const rawTransfers = Array.isArray(raw.transfers) ? raw.transfers : isObj(raw.transfers) ? Object.values(raw.transfers) : [];
+  for (const t of rawTransfers) {
     if (!isObj(t) || !isCode(String(t.ean ?? '')) || !out.depots[t.fromDepotId] || !out.depots[t.toDepotId]) continue;
     const status = ['pending', 'done', 'cancelled', 'refused'].includes(t.status) ? t.status : 'pending';
     const tr = {
@@ -163,13 +224,28 @@ export function normalizeDb(raw, now = new Date()) {
     if (safeId(t.operatorId)) tr.operatorId = t.operatorId;
     for (const k of ['receivedBy', 'cancelledBy', 'note']) if (t[k]) tr[k] = str(t[k], LIMITS.name);
     for (const k of ['receivedDate', 'cancelledDate']) if (t[k]) tr[k] = iso(t[k], nowIso);
-    out.transfers.push(tr);
+    out.transfers[tr.id] = tr;
+  }
+
+  // Commandes
+  for (const o of Object.values(isObj(raw.orders) ? raw.orders : {})) {
+    const order = normOrder(o, out, nowIso);
+    if (order) out.orders[order.id] = order; else notes.push('commande invalide ignorée');
+  }
+
+  if (!isObj(raw.usage)) {
+    for (const h of out.history) {
+      const consumed = h.type === 'out' || h.type === 'transfer';
+      if (!consumed || h.undone || !out.articles[h.ean] || !keepWeek(weekOf(h.date))) continue;
+      const weeks = ((out.usage[h.depotId] ??= {})[h.ean] ??= {});
+      weeks[weekOf(h.date)] = (weeks[weekOf(h.date)] ?? 0) + h.qty;
+    }
   }
 
   // Audit
   out.audit = (Array.isArray(raw.audit) ? raw.audit : []).flatMap((e) => {
     if (!isObj(e) || !e.action) return [];
-    const type = ['in', 'out', 'inv', 'transfer', 'login', 'admin'].includes(e.type) ? e.type : 'admin';
+    const type = Object.hasOwn(AUDIT_TYPES, e.type) ? e.type : 'admin';
     const entry = { id: safeId(e.id) || uid(), type, action: str(e.action, 200), operator: str(e.operator, LIMITS.short) || 'système', depotId: out.depots[e.depotId] ? e.depotId : '', date: iso(e.date, nowIso), meta: {} };
     if (safeId(e.operatorId)) entry.operatorId = e.operatorId;
     if (isObj(e.meta)) {
@@ -183,10 +259,40 @@ export function normalizeDb(raw, now = new Date()) {
     return [entry];
   });
   out.audit.sort((a, b) => b.date.localeCompare(a.date));
-  out.audit = out.audit.slice(0, LIMITS.audit);
+  out.audit = out.audit.slice(0, limits.audit);
 
   if (wasLegacy) notes.push('données migrées depuis l\'ancien format');
   return { db: out, notes };
+}
+
+function normOrder(o, out, nowIso) {
+  if (!isObj(o)) return null;
+  const id = safeId(o.id);
+  const kind = o.kind === 'supplier' ? 'supplier' : o.kind === 'internal' ? 'internal' : null;
+  if (!id || !kind || !out.depots[o.depotId]) return null;
+  if (kind === 'internal' && !out.depots[o.sourceId]) return null;
+  if (kind === 'supplier' && !out.suppliers[o.supplierId]) return null;
+  const allowed = kind === 'internal' ? ['draft', 'submitted', 'picking', 'shipped', 'received', 'cancelled'] : ['draft', 'sent', 'partial', 'received', 'closed', 'cancelled'];
+  const status = allowed.includes(o.status) && ORDER_STATUS[o.status] ? o.status : null;
+  if (!status) return null;
+  const lines = [];
+  const seen = new Set();
+  for (const l of (Array.isArray(o.lines) ? o.lines : []).slice(0, ORDER_LIMITS.lines)) {
+    const ean = String(l?.ean ?? '');
+    if (!isCode(ean) || seen.has(ean)) continue;
+    seen.add(ean);
+    const line = { ean, name: str(l.name || out.articles[ean]?.name || ean, LIMITS.name), qty: nonNeg(l.qty, LIMITS.maxQty) };
+    for (const k of ['shipped', 'received']) if (l[k] !== undefined && l[k] !== null) line[k] = nonNeg(l[k], LIMITS.maxQty);
+    if (kind === 'supplier' && Number.isFinite(Number(l.price))) line.price = Math.max(0, Math.round(Number(l.price) * 100) / 100);
+    lines.push(line);
+  }
+  const order = { id, kind, no: nonNeg(o.no, 1e9), status, depotId: o.depotId, lines, createdAt: iso(o.createdAt, nowIso), createdBy: str(o.createdBy, LIMITS.short) };
+  if (kind === 'internal') order.sourceId = o.sourceId; else order.supplierId = o.supplierId;
+  for (const k of ['submittedAt', 'shippedAt', 'receivedAt', 'cancelledAt', 'sentAt', 'pickingAt']) if (o[k]) order[k] = iso(o[k], nowIso);
+  for (const k of ['submittedBy', 'shippedBy', 'receivedBy', 'cancelledBy', 'sentBy', 'pickedBy', 'note', 'reason']) if (o[k]) order[k] = str(o[k], k === 'note' || k === 'reason' ? 200 : LIMITS.short);
+  if (safeId(o.backorderOf)) order.backorderOf = o.backorderOf;
+  if (Number.isInteger(o.gaps) && o.gaps >= 0) order.gaps = o.gaps;
+  return order;
 }
 
 /** Enveloppe d'une sauvegarde exportée. */
