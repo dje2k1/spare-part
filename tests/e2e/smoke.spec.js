@@ -60,12 +60,16 @@ test('captures (design)', async ({ page }, info) => {
 
 test.describe('avec les animations', () => {
   test.use({ reducedMotion: 'no-preference' });
-  test('accueil animé : compteurs, tuiles et navigation fonctionnent', async ({ page }) => {
+  test('accueil animé : les commandes roulent jusqu\'à leur tronçon, plaques et navigation fonctionnent', async ({ page }) => {
     await loginDemo(page, { name: 'Sophie Martin', pin: '2345', depot: 'Paris' });
     await expect(page.locator('.tile')).toHaveCount(4);
     await expect(page.locator('#view.is-entering')).toHaveCount(0, { timeout: 3000 }); // l'arrivée se termine
-    const value = page.locator('.hstat [data-count]').nth(1);
-    await expect(value).toHaveText(await value.getAttribute('data-count')); // le compteur atteint sa valeur
+    // Les livraisons expédiées vers l'atelier sont sur le dernier tronçon (« en route »), après la station Expédition
+    const track = await page.locator('.ligne__track').boundingBox();
+    const train = page.locator('.ligne__train[data-status="shipped"]');
+    await expect(train).toBeVisible();
+    await expect.poll(async () => { const b = await train.boundingBox(); return (b.x + b.width / 2 - track.x) / track.width; }).toBeGreaterThan(0.75);
+    await expect(page.getByTestId('ligne')).toContainText('en route');
     await page.getByTestId('tile-out').click();
     await expect(page.locator('body')).toHaveAttribute('data-accent', 'red');
     await expect(page.locator('#topbar-title')).toHaveText('Sortie de stock');

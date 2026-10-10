@@ -1,12 +1,13 @@
-// Accueil magasinier : un héros (salutation, dépôt, trois indicateurs), la barre « Scanner ou rechercher »,
-// 4 grandes tuiles adaptées au dépôt (atelier ou entrepôt central) avec leur compteur, 3 lignes
-// « Aujourd'hui » au plus et l'activité de la semaine. Le reste est dans le menu « Plus ».
+// Accueil magasinier : la plaque du dépôt (« vous êtes ici », salutation, trois chiffres), la barre « Scanner
+// ou rechercher », la ligne des commandes en cours (chaque commande sur le tronçon de son état réel), 4 plaques
+// d'action adaptées au dépôt (atelier ou entrepôt central) avec leur compteur, 3 tâches « Aujourd'hui » au plus
+// et l'activité de la semaine. Le reste est dans le menu « Plus ».
 import { html, fmtInt, fmtLongDate, plural } from '../../lib/text.js';
 import { isCode } from '../../lib/ean.js';
-import { icon, actions, $$ } from '../dom.js';
+import { icon, actions } from '../dom.js';
 import { state, db, depot, can } from '../state.js';
 import { pendingIncoming, reorderList, kpis, flow, resolveEan } from '../../core/queries.js';
-import { atelierOrders, centralQueue, purchaseOverview, briefing } from '../../core/planning.js';
+import { atelierOrders, centralQueue, purchaseOverview, briefing, orderLabel } from '../../core/planning.js';
 import { APP_LABEL, DEPOT_KINDS } from '../../core/config.js';
 import { navigate } from '../router.js';
 import { switchDepot, updateChrome } from '../session.js';
@@ -15,9 +16,9 @@ import { openArticle } from './article-sheet.js';
 import { openBriefing } from '../briefing.js';
 import { toast } from '../toast.js';
 import { feedback } from '../feedback.js';
+import { depotHue } from '../look.js';
 
 let stopWedge = null;
-const RING = 2 * Math.PI * 20; // circonférence de l'anneau « stock sain » (r = 20)
 const DAYS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
 /** Tuiles du dépôt actif : [{to, icon, fam, title, sub, count}] */
@@ -44,7 +45,7 @@ function tiles() {
   return out;
 }
 
-/** Trois indicateurs du héros : santé du stock (anneau), alertes, flux du jour (réception ou préparation). */
+/** Trois chiffres sous la plaque : santé du stock, alertes, flux du jour (réception ou préparation). */
 function heroStats(d, now) {
   const k = kpis(db(), d.id, { days: 7, now });
   const health = k.serviceRate; // même calcul que le tableau de bord : pièces suivies au-dessus de leur seuil
@@ -52,13 +53,43 @@ function heroStats(d, now) {
     ? { to: 'orders', value: centralQueue(db(), d.id).toPrepare.length, label: 'À préparer' }
     : { to: 'orders', value: atelierOrders(db(), d.id).toReceive.length + pendingIncoming(db(), d.id).length, label: 'À recevoir' };
   return html`<div class="hstats">
-    <a class="hstat hstat--ring" href="#/dashboard">
-      <span class="ring-wrap"><svg class="ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="ring__track" cx="24" cy="24" r="20"/><circle class="ring__value" cx="24" cy="24" r="20" stroke-dasharray="${RING.toFixed(2)}" stroke-dashoffset="${(RING * (1 - health / 100)).toFixed(2)}"/></svg>
-        <strong class="ring__pct num"><span data-count="${health}">${health}</span><small>%</small></strong></span>
-      <span class="hstat__label">Stock sain</span></a>
-    <a class="hstat ${k.alerts ? 'is-alert' : ''}" href="#/articles?f=alert"><strong class="hstat__value num" data-count="${k.alerts}">${fmtInt(k.alerts)}</strong><span class="hstat__label">${k.alerts > 1 ? 'Alertes' : 'Alerte'}</span></a>
-    <a class="hstat" href="#/${third.to}"><strong class="hstat__value num" data-count="${third.value}">${fmtInt(third.value)}</strong><span class="hstat__label">${third.label}</span></a>
+    <a class="hstat" href="#/dashboard"><strong class="hstat__value num">${health}<small>%</small></strong><span class="hstat__label">Stock sain</span></a>
+    <a class="hstat ${k.alerts ? 'is-alert' : ''}" href="#/articles?f=alert"><strong class="hstat__value num">${fmtInt(k.alerts)}</strong><span class="hstat__label">${k.alerts > 1 ? 'Alertes' : 'Alerte'}</span></a>
+    <a class="hstat" href="#/${third.to}"><strong class="hstat__value num">${fmtInt(third.value)}</strong><span class="hstat__label">${third.label}</span></a>
   </div>`;
+}
+
+/** « Atelier Paris – Maroquinerie » → ['Atelier Paris', 'Maroquinerie'] : la plaque porte le lieu, puis le métier. */
+function splitName(name) {
+  const m = /^(.+?)\s+[–—-]\s+(.+)$/.exec(name);
+  return m ? [m[1], m[2]] : [name, ''];
+}
+
+/**
+ * La ligne des commandes en cours, de l'entrepôt central vers l'atelier (ou vers les ateliers, vue de l'entrepôt).
+ * Quatre stations (commande, préparation, expédition, arrivée) ; chaque état occupe le milieu d'un tronçon et y
+ * place un « train » : la commande la plus ancienne de cet état, plus le nombre des suivantes.
+ */
+const STAGES = [['submitted', 1 / 6], ['picking', 3 / 6], ['shipped', 5 / 6]];
+function ligne(d) {
+  const central = d.kind === 'central';
+  if (!Object.values(db().depots).some((x) => x.kind === 'central')) return ''; // dépôt isolé : pas de commandes internes
+  let orders;
+  if (central) { const q = centralQueue(db(), d.id); orders = [...q.toPrepare, ...q.picking, ...q.shipped]; }
+  else { const o = atelierOrders(db(), d.id); orders = [...o.pending, ...o.toReceive]; }
+  const words = { submitted: central ? 'à préparer' : 'en attente', picking: 'en préparation', shipped: 'en route' };
+  const trains = STAGES.map(([status, x], i) => ({ status, x, i, list: orders.filter((o) => o.status === status) })).filter((t) => t.list.length);
+  const sum = trains.map((t) => `${t.list.length} ${words[t.status]}`).join(' · ');
+  return html`<a class="ligne ${depotHue(d)}" href="#/orders" data-testid="ligne">
+    <span class="ligne__head"><span class="ligne__title">${central ? 'Commandes des ateliers' : 'Commandes en cours'}</span>${sum ? html`<span class="ligne__sum">${sum}</span>` : ''}</span>
+    <span class="ligne__track" aria-hidden="true">
+      <span class="ligne__rail"></span>
+      <span class="ligne__stop ligne__stop--0"></span><span class="ligne__stop ligne__stop--1"></span><span class="ligne__stop ligne__stop--2"></span><span class="ligne__stop ligne__stop--end"></span>
+      ${trains.map((t) => html`<span class="ligne__lane" style="--x:${(t.x * 100).toFixed(3)}%;--d:${60 + t.i * 80}ms"><span class="ligne__train" data-status="${t.status}">${orderLabel(t.list[0])}${t.list.length > 1 ? html`<b>+${t.list.length - 1}</b>` : ''}</span></span>`)}
+    </span>
+    <span class="ligne__stops"><span>Commande</span><span>Préparation</span><span>Expédition</span><span>${central ? 'Ateliers' : splitName(d.name)[0]}</span></span>
+    ${orders.length ? '' : html`<span class="ligne__empty">${central ? 'Aucune commande à préparer.' : 'Aucune commande en cours.'}</span>`}
+  </a>`;
 }
 
 /** Entrées et sorties des 7 derniers jours (barres animées). */
@@ -87,17 +118,20 @@ function render() {
   const todo = briefing(db(), { depotId: d.id, role: u.role, now });
   const multi = can('depot.any') && Object.keys(db().depots).length > 1;
   const hello = now.getHours() >= 18 ? 'Bonsoir' : 'Bonjour';
+  const [place, trade] = splitName(d.name);
+  const kind = DEPOT_KINDS[d.kind]?.label ?? 'Atelier';
+  const showKind = !d.name.toLowerCase().includes(kind.toLowerCase());
   return html`
     <section class="home">
       <header class="hero">
-        <p class="hero__date">${fmtLongDate(now)}</p>
-        <h2 class="hero__hello">${hello}, <em>${u.name.split(' ')[0]}</em></h2>
-        <div class="hero__where">
-          ${multi
-            ? html`<label class="home__depot">${icon(d.kind === 'central' ? 'store' : 'pin', 'i--sm')}<span class="sr-only">Dépôt actif</span>
-              <select class="select select--plain" data-change="home.depot" aria-label="Dépôt actif">${Object.values(db().depots).map((x) => html`<option value="${x.id}" ${x.id === d.id ? 'selected' : ''}>${x.name}</option>`)}</select></label>`
-            : html`<p class="home__depot">${icon(d.kind === 'central' ? 'store' : 'pin', 'i--sm')}<span>${d.name}</span></p>`}
-          ${d.name.toLowerCase().includes((DEPOT_KINDS[d.kind]?.label ?? '').toLowerCase()) ? '' : html`<span class="hero__kind">${DEPOT_KINDS[d.kind]?.label ?? 'Atelier'}</span>`}
+        <div class="hero__plaque">
+          <h2 class="hero__place">${place}${trade ? html`<small>${trade}</small>` : ''}</h2>
+          <p class="hero__hello">${hello} ${u.name.split(' ')[0]} — ${fmtLongDate(now)}</p>
+          ${multi || showKind ? html`<div class="hero__where">
+            ${multi ? html`<label class="home__depot">${icon(d.kind === 'central' ? 'store' : 'pin', 'i--sm')}<span class="sr-only">Dépôt actif</span>
+              <select class="select select--plain" data-change="home.depot" aria-label="Dépôt actif">${Object.values(db().depots).map((x) => html`<option value="${x.id}" ${x.id === d.id ? 'selected' : ''}>${x.name}</option>`)}</select></label>` : ''}
+            ${showKind ? html`<span class="hero__kind">${kind}</span>` : ''}
+          </div>` : ''}
         </div>
         ${heroStats(d, now)}
       </header>
@@ -106,16 +140,17 @@ function render() {
         ${icon('search')}<span class="lookup__text">Scanner ou rechercher une pièce</span><span class="lookup__scan">${icon('scan')}</span>
       </button>
 
+      ${ligne(d)}
+
       <nav class="tiles" aria-label="Tâches principales">
         ${tiles().map((t) => html`<a class="tile fam-${t.fam}" href="#/${t.to}" data-testid="${t.testid}">
-          <span class="tile__art" aria-hidden="true">${icon(t.icon)}</span>
-          <span class="tile__icon">${icon(t.icon, 'i--lg')}</span>
+          <span class="tile__icon">${icon(t.icon)}</span>
           ${t.count ? html`<span class="tile__count num">${fmtInt(t.count)}<span class="sr-only"> à traiter</span></span>` : ''}
           <span><span class="tile__title">${t.title}</span><span class="tile__sub">${t.sub}</span></span></a>`)}
       </nav>
 
       <section class="today" aria-labelledby="today-title">
-        <header class="today__head"><h3 class="eyebrow" id="today-title">Aujourd'hui</h3>
+        <header class="today__head"><h3 id="today-title">Aujourd'hui</h3>
           ${todo.length > 3 ? html`<button type="button" class="btn btn--text" data-action="home.briefing">Tout voir (${todo.length})</button>` : ''}</header>
         ${todo.length ? html`<ul class="today__list">${todo.slice(0, 3).map((t) => html`<li><a class="today__item today__item--${t.tone}" href="#/${t.to}">
             ${icon(t.icon, 'i--sm')}<span class="grow"><strong>${t.title}</strong>${t.text ? html`<span class="today__text">${t.text}</span>` : ''}</span>${icon('chevron', 'i--sm')}</a></li>`)}</ul>`
@@ -128,26 +163,9 @@ function render() {
     </section>`;
 }
 
-/** Compteurs qui défilent jusqu'à leur valeur à l'arrivée sur l'accueil (sauf mouvement réduit). */
-function countUp(root) {
-  if (!root.classList.contains('is-entering') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const start = performance.now() + 150;
-  const els = $$('[data-count]', root).map((el) => ({ el, to: Number(el.dataset.count) || 0, text: el.textContent })).filter((x) => x.to > 1);
-  if (!els.length) return;
-  els.forEach((x) => { x.el.textContent = '0'; });
-  const step = (t) => {
-    const p = Math.min(1, Math.max(0, (t - start) / 900));
-    const e = 1 - (1 - p) ** 3;
-    els.forEach((x) => { x.el.textContent = p >= 1 ? x.text : fmtInt(Math.round(x.to * e)); });
-    if (p < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
 export const homeRoute = {
   title: 'Accueil', brand: true, nav: 'home', render,
-  mount(root) {
-    countUp(root);
+  mount() {
     // Douchette depuis l'accueil : la fiche de la pièce s'ouvre directement
     stopWedge?.(); // mount est rappelé à chaque rafraîchissement : un seul écouteur à la fois
     stopWedge = listenWedge((code) => {

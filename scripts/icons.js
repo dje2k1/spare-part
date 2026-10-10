@@ -1,22 +1,29 @@
 // Génère les icônes PWA (PNG) avec la vraie police de la marque, via Chromium (Playwright).
 //   npm run icons            (nécessite `npm install` + `npm run vendor` au préalable)
+// Motif : une plaque émaillée — aplat bleu émail, liseré blanc intérieur, « M » en Archivo étroit et gras.
 import { chromium } from '@playwright/test';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const font = readFileSync(join(root, 'fonts/playfair-display-500.woff2')).toString('base64');
-const INK = '#111111', GOLD = '#a08947';
+const font = readFileSync(join(root, 'fonts/archivo-variable.woff2')).toString('base64');
+const ENAMEL = '#1b3d93';
 
-// scale = part du carré occupée par le motif (0,72 pour « maskable » : zone de sécurité Android).
-const page = (size, scale) => `<!doctype html><meta charset="utf-8"><style>
-@font-face{font-family:PF;src:url(data:font/woff2;base64,${font}) format("woff2");font-weight:500}
-html,body{margin:0;background:${INK}}
-.i{width:${size}px;height:${size}px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:${INK}}
-.m{font:500 ${Math.round(size * 0.6 * scale)}px/1 PF,Georgia,serif;color:#fff;margin-top:${Math.round(-size * 0.04 * scale)}px}
-.b{width:${Math.round(size * 0.3 * scale)}px;height:${Math.max(2, Math.round(size * 0.014 * scale))}px;background:${GOLD};margin-top:${Math.round(size * 0.035 * scale)}px}
-</style><div class="i"><div class="m">M</div><div class="b"></div></div>`;
+// scale = part du carré occupée par la plaque (0,72 pour « maskable » : zone de sécurité Android).
+const page = (size, scale) => {
+  const plate = Math.round(size * scale);
+  const inset = Math.round(plate * 0.11);
+  const line = Math.max(2, Math.round(plate * 0.035));
+  return `<!doctype html><meta charset="utf-8"><style>
+@font-face{font-family:AR;src:url(data:font/woff2;base64,${font}) format("woff2");font-weight:100 900;font-stretch:62% 125%}
+html,body{margin:0;background:${ENAMEL}}
+.i{width:${size}px;height:${size}px;display:grid;place-items:center;background:${ENAMEL}}
+.p{position:relative;width:${plate}px;height:${plate}px;display:grid;place-items:center}
+.p::before{content:'';position:absolute;inset:${inset}px;border:${line}px solid #fff;border-radius:${Math.round(plate * 0.13)}px}
+.m{font:800 ${Math.round(plate * 0.56)}px/1 AR,system-ui,sans-serif;font-stretch:70%;color:#fff;will-change:transform;margin-top:${Math.round(plate * 0.02)}px}
+</style><div class="i"><div class="p"><div class="m">M</div></div></div>`;
+};
 
 const OUT = [
   ['icons/icon-192.png', 192, 1],

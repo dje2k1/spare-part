@@ -57,11 +57,11 @@ const fileInput = () => html`<input type="file" id="photo-file" class="sr-only" 
 function resultView() {
   const { product, parts } = P.result;
   return html`
-    <div class="card"><p class="eyebrow">Produit identifié${product.category ? ` · ${product.category}` : ''}</p><h3 class="card__title">${product.name}</h3>
-      <p class="muted">${product.description}${product.confidence === 'low' ? ' ⚠ Identification incertaine.' : ''}</p></div>
+    <div class="card"><h3 class="card__title">${product.name}</h3><p class="eyebrow">Produit identifié${product.category ? ` · ${product.category}` : ''}</p>
+      <p class="muted">${product.description}${product.confidence === 'low' ? html` <span class="pill pill--low">Identification incertaine</span>` : ''}</p></div>
     ${parts.length ? html`<h3 class="eyebrow">Pièces détachées suggérées</h3>
       <ul class="list">${parts.map((p) => html`<li><label class="row row--check"><input type="checkbox" data-change="photo.toggle" data-id="${p.id}" ${P.selected.has(p.id) ? 'checked' : ''}>
-        <span class="row__body"><span class="row__eyebrow">${p.family || '—'}</span><span class="row__title">${p.name} ${PRIORITY[p.priority][1] ? html`<span class="pill ${PRIORITY[p.priority][0]}">${PRIORITY[p.priority][1]}</span>` : ''}</span><span class="row__meta">${p.description}</span></span>
+        <span class="row__body"><span class="row__title">${p.name} ${PRIORITY[p.priority][1] ? html`<span class="pill ${PRIORITY[p.priority][0]}">${PRIORITY[p.priority][1]}</span>` : ''}</span><span class="row__meta">${p.family ? `${p.family} · ` : ''}${p.description}</span></span>
         <span class="row__trail"><span class="row__sub">Seuil</span><span class="row__qty">${p.typical_threshold}</span></span></label></li>`)}</ul>
       <p class="muted">Les pièces importées reçoivent un code interne (aucun code-barres n'est inventé) et un stock à 0.</p>
       ${can('article.edit') ? html`<button type="button" class="btn btn--primary btn--block" data-action="photo.import" ${P.selected.size ? '' : 'disabled'}>${icon('plus')}Importer ${P.selected.size} pièce${P.selected.size > 1 ? 's' : ''}</button>` : ''}`

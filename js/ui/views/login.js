@@ -12,7 +12,7 @@ import { toast } from '../toast.js';
 import { feedback } from '../feedback.js';
 import { directory, fetchDirectory, orgCode, serverLogin } from '../sync-ui.js';
 import { avatar } from '../components.js';
-import { setAccent, hueClass } from '../look.js';
+import { setAccent, depotHue } from '../look.js';
 
 const L = { step: 'depot', depotId: null, userId: null, message: '' };
 
@@ -157,7 +157,7 @@ function depotStep() {
       ${L.message ? html`<p class="banner banner--info" role="status">${L.message}</p>` : ''}
       <h2 class="login__h">Où travaillez-vous ?</h2>
       <ul class="login__list">${depots.map((d, i) => html`<li><button type="button" class="login__choice" data-action="login.depot" data-id="${d.id}" ${i === 0 ? 'data-autofocus' : ''}>
-        <span class="login__ico ${d.kind === 'central' ? 'hue-2' : hueClass(d.name)}" aria-hidden="true">${icon(d.kind === 'central' ? 'store' : 'pin')}</span>
+        <span class="login__ico ${depotHue(d)}" aria-hidden="true">${icon(d.kind === 'central' ? 'store' : 'pin')}</span>
         <span class="login__choice-main"><strong>${d.name}</strong><span class="muted">${d.location || d.code}</span></span>${icon('chevron')}</button></li>`)}</ul>
       ${demoHint()}${serverFoot()}
     </div>`;

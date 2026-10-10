@@ -237,7 +237,7 @@ test('fichiers servis compressés (Brotli, sinon gzip) : contenu identique, en-t
   // La page reste réécrite (mode serveur annoncé), compressée ou non
   const page = await raw('/', 'br');
   assert.match(zlib.brotliDecompressSync(page.body).toString('utf8'), /<meta name="mode-sync" content="server">/);
-  const font = await raw('/fonts/jost-variable.woff2', 'br');
+  const font = await raw('/fonts/archivo-variable.woff2', 'br');
   assert.equal(font.headers['content-encoding'], undefined, 'police déjà compressée : servie telle quelle');
 });
 

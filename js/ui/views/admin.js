@@ -36,7 +36,7 @@ function render(r) {
   const sec = allowed().find((s) => s.key === key);
   if (!sec) {
     return html`<section>${pageHead({ eyebrow: 'Paramètres', title: 'Administration' })}
-      <ul class="list">${allowed().map((s, i) => html`<li><a class="row" href="#/admin?s=${s.key}"><span class="row__lead thumb hue-${(i * 3 + 2) % 10}">${icon(s.icon)}</span><span class="row__body"><span class="row__title">${s.title}</span><span class="row__meta">${s.desc}</span></span>${icon('chevron', 'i--sm')}</a></li>`)}</ul></section>`;
+      <ul class="list">${allowed().map((s, i) => html`<li><a class="row" href="#/admin?s=${s.key}"><span class="row__lead avatar hue-${(i * 3 + 2) % 10}">${icon(s.icon)}</span><span class="row__body"><span class="row__title">${s.title}</span><span class="row__meta">${s.desc}</span></span>${icon('chevron', 'i--sm')}</a></li>`)}</ul></section>`;
   }
   const body = { users, depots, locations, import: importer, export: exporter, data }[sec.key]();
   return html`<section>${pageHead({ eyebrow: 'Administration', title: sec.title })}${body}</section>`;

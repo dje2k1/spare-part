@@ -21,15 +21,16 @@ const lum = (hex) => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * t + parseInt(b.slice(i, i + 2), 16) * (1 - t)).toString(16).padStart(2, '0')).join('');
 
 // [premier plan, arrière-plan, minimum] : 4,5 pour le texte, 3 pour les éléments d'interface
 const TEXT = 4.5, UI = 3;
+const SURFACES = ['bg', 'bg-soft', 'bg-sunken', 'surface'];
 const PAIRS = [
-  ['ink', 'bg', TEXT], ['ink-2', 'bg', TEXT], ['ink-3', 'bg', TEXT], ['ink-3', 'bg-soft', TEXT], ['ink-3', 'bg-sunken', TEXT], ['ink-3', 'surface', TEXT],
-  ['on-ink', 'ink', TEXT], ['gold-ink', 'bg', TEXT], ['gold-ink', 'gold-bg', TEXT],
-  ['red', 'bg', TEXT], ['red', 'red-bg', TEXT], ['green', 'bg', TEXT], ['green', 'green-bg', TEXT],
-  ['amber', 'bg', TEXT], ['amber', 'amber-bg', TEXT], ['blue', 'bg', TEXT], ['blue', 'blue-bg', TEXT],
-  ['control', 'bg', UI], ['control', 'surface', UI], ['gold', 'bg', UI],
+  ...['ink', 'ink-2', 'ink-3'].flatMap((fg) => SURFACES.map((bg) => [fg, bg, TEXT])),
+  ['on-ink', 'ink', TEXT],
+  ...['red', 'green', 'amber', 'blue'].flatMap((s) => [[s, 'bg', TEXT], [s, 'surface', TEXT], [s, `${s}-bg`, TEXT]]),
+  ['control', 'bg', UI], ['control', 'surface', UI],
 ];
 
 for (const [name, tokens] of [['clair', light], ['sombre', darkAuto]]) {
@@ -41,7 +42,7 @@ for (const [name, tokens] of [['clair', light], ['sombre', darkAuto]]) {
 }
 
 test('thème sombre : le mode automatique et le mode forcé portent exactement les mêmes valeurs', () => {
-  assert.ok(Object.keys(darkAuto).length >= 20, 'jetons sombres introuvables');
+  assert.ok(Object.keys(darkAuto).length >= 18, 'jetons sombres introuvables');
   assert.deepEqual(darkForced, darkAuto);
 });
 
@@ -49,32 +50,30 @@ test('chaque jeton de couleur du thème clair a son équivalent sombre', () => {
   assert.deepEqual(Object.keys(darkAuto).sort(), Object.keys(light).sort());
 });
 
-// ── Familles de teintes (en-têtes, tuiles, icônes) et monogrammes ──
+// ── Émaux des sections (barre du haut, plaques, boutons principaux, texte d'accent) ──
 const famBlock = /\nhtml\s*\{([\s\S]*?)\n\}/.exec(css);
-const fams = famBlock ? Object.fromEntries([...famBlock[1].matchAll(/--([a-z]+)-(1|2|3|ink):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [`${m[1]}-${m[2]}`, m[3].toLowerCase()])) : {};
+const fams = famBlock ? Object.fromEntries([...famBlock[1].matchAll(/--([a-z]+)-(fill|on|text|glow):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [`${m[1]}-${m[2]}`, m[3].toLowerCase()])) : {};
 const famNames = [...new Set(Object.keys(fams).map((k) => k.split('-')[0]))];
-const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * t + parseInt(b.slice(i, i + 2), 16) * (1 - t)).toString(16).padStart(2, '0')).join('');
 
-test('familles : texte blanc lisible sur tout le dégradé (profond → vif)', () => {
-  assert.ok(famNames.length >= 8, 'familles introuvables');
-  const fails = [];
-  for (const f of famNames) for (const k of ['1', '2']) { const r = ratio('#ffffff', fams[`${f}-${k}`]); if (r < TEXT) fails.push(`blanc sur ${f}-${k} : ${r.toFixed(2)}`); }
+test('émaux : texte et liseré lisibles sur chaque plaque', () => {
+  assert.ok(famNames.length >= 10, 'émaux introuvables');
+  const fails = famNames.map((f) => [f, ratio(fams[`${f}-on`], fams[`${f}-fill`])]).filter(([, r]) => r < TEXT).map(([f, r]) => `${f}-on sur ${f}-fill : ${r.toFixed(2)}`);
   assert.deepEqual(fails, []);
 });
 
-test('familles : texte d\'accent lisible en clair (fond, surface, teinte douce) et en sombre (lumière)', () => {
+test('émaux : texte d\'accent lisible en clair (fond, surface, teinte douce) et en sombre (fond, surface, teinte)', () => {
   const fails = [];
   for (const f of famNames) {
-    const ink = fams[`${f}-ink`], vivid = fams[`${f}-2`], glow = fams[`${f}-3`];
-    for (const bg of [light.bg, light.surface, light['bg-soft'], mix(vivid, light.surface, 0.11)]) { const r = ratio(ink, bg); if (r < TEXT) fails.push(`${f}-ink sur ${bg} : ${r.toFixed(2)}`); }
-    for (const bg of [darkAuto.bg, darkAuto.surface, mix(glow, darkAuto.surface, 0.13)]) { const r = ratio(glow, bg); if (r < TEXT) fails.push(`${f}-3 sur ${bg} (sombre) : ${r.toFixed(2)}`); }
+    const text = fams[`${f}-text`], fill = fams[`${f}-fill`], glow = fams[`${f}-glow`];
+    for (const bg of [light.bg, light.surface, light['bg-soft'], mix(fill, light.surface, 0.1)]) { const r = ratio(text, bg); if (r < TEXT) fails.push(`${f}-text sur ${bg} : ${r.toFixed(2)}`); }
+    for (const bg of [darkAuto.bg, darkAuto.surface, mix(glow, darkAuto.surface, 0.14)]) { const r = ratio(glow, bg); if (r < TEXT) fails.push(`${f}-glow sur ${bg} (sombre) : ${r.toFixed(2)}`); }
   }
   assert.deepEqual(fails, []);
 });
 
-test('monogrammes et avatars : initiales blanches lisibles sur les 10 teintes', () => {
-  const hues = [...css.matchAll(/\.hue-\d\s*\{\s*--h1:\s*(#[0-9a-fA-F]{6});\s*--h2:\s*(#[0-9a-fA-F]{6});/g)];
+test('monogrammes, avatars et lignes de dépôt : initiales blanches lisibles sur les 10 émaux', () => {
+  const hues = [...css.matchAll(/\.hue-\d\s*\{\s*--h:\s*(#[0-9a-fA-F]{6});/g)].map((m) => m[1]);
   assert.equal(hues.length, 10);
-  const fails = hues.flatMap(([, a, b]) => [a, b].filter((c) => ratio('#ffffff', c) < TEXT).map((c) => `blanc sur ${c}`));
+  const fails = hues.filter((c) => ratio('#ffffff', c) < TEXT).map((c) => `blanc sur ${c}`);
   assert.deepEqual(fails, []);
 });

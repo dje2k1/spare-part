@@ -57,7 +57,7 @@ function countView() {
     <div class="inv-progress"><progress max="${I.items.length}" value="${done}" aria-label="Progression du comptage"></progress><span class="num">${I.idx + 1} / ${I.items.length} · ${done} comptés</span></div>
     <article class="card scan-card">
       <header class="scan-card__head">${a ? thumb(a, 'thumb--lg') : ''}
-        <div class="grow"><p class="eyebrow">Article ${I.idx + 1} sur ${I.items.length}</p><h3 class="scan-card__name">${it.name}</h3>
+        <div class="grow"><h3 class="scan-card__name">${it.name}</h3>
           <p class="inv-loc">${loc ? locBadge(locCode(loc)) : html`<span class="muted">Sans emplacement</span>`}</p></div></header>
       ${!I.blind ? html`<p class="muted">Stock théorique : <strong class="num">${fmtInt(it.sys)}</strong></p>` : ''}
       <div class="field"><span class="field__label">Quantité comptée</span>

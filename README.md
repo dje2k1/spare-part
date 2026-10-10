@@ -5,8 +5,9 @@ codes-barres, sorties et réceptions, commandes des ateliers au central (prépar
 écarts), commandes fournisseurs, seuils intelligents, étiquettes, inventaire guidé, briefing quotidien et rapport hebdomadaire.
 PWA mobile d'abord (iPhone et Android), utilisable hors ligne, thème clair / sombre, aucune compilation.
 
-> Version 3.1 · pensée pour les magasiniers : un accueil simple à quatre tuiles, les fonctions avancées dans le menu ;
-> fluide sur un vrai catalogue (des milliers de pièces, des centaines de commandes).
+> Version 3.2 · pensée pour les magasiniers : un accueil simple à quatre plaques d'action, les fonctions avancées dans
+> le menu ; fluide sur un vrai catalogue (des milliers de pièces, des centaines de commandes). Charte graphique
+> « Plaques & lignes » : la signalétique parisienne appliquée au stock ([système de design](DESIGN.md)).
 
 ## Deux façons de l'utiliser
 
@@ -29,10 +30,12 @@ Essai rapide du mode serveur : `npm ci --prefix server && npm run server:demo` p
 
 ## Pour les magasiniers
 
-* **Accueil** : une barre « scanner ou chercher » (douchette, clavier ou caméra) et quatre grandes tuiles selon le site —
-  atelier : *Réceptionner*, *Sortir*, *Commander*, *Inventaire* (ou *Entrée* pour un opérateur) ; entrepôt : *Préparer*,
-  *Réceptionner*, *Sortir*, *Commander* (ou *Entrée*) — avec leurs compteurs, puis la liste « Aujourd'hui » (livraisons
-  attendues, alertes, commandes à préparer).
+* **Accueil** : la plaque du dépôt (« vous êtes ici ») avec trois chiffres (stock sain, alertes, à recevoir ou à
+  préparer), une barre « scanner ou chercher » (douchette, clavier ou caméra), la **ligne des commandes en cours** —
+  chaque commande est posée sur le tronçon de son état réel (en attente, en préparation, en route) entre l'entrepôt
+  central et l'atelier — puis quatre plaques d'action selon le site — atelier : *Réceptionner*, *Sortir*, *Commander*,
+  *Inventaire* (ou *Entrée* pour un opérateur) ; entrepôt : *Préparer*, *Réceptionner*, *Sortir*, *Commander* (ou
+  *Entrée*) — avec leurs compteurs, et la liste « Aujourd'hui » (livraisons attendues, alertes, commandes à préparer).
 * **Gestes** : chaque écran de travail se pilote au scan (contrôle de la pièce, quantité, retour sonore et vibration),
   avec annulation immédiate ; aucune action n'est perdue par un double appui.
 * **Douchette** (lecteur Bluetooth/USB en mode clavier) : utilisable partout, même si un champ quantité a le focus — la
@@ -45,9 +48,12 @@ Essai rapide du mode serveur : `npm ci --prefix server && npm run server:demo` p
 * **Menu** (bouton en haut à droite) : articles, transferts, plan, inventaire, étiquettes, commandes fournisseurs,
   fournisseurs, seuils intelligents, réassort, rapport, tableau de bord, journal, analyse photo, administration.
 * **Votre journée** : à la première ouverture du jour, un résumé (ce qui arrive, ce qui manque, ce qui attend).
-* **Repères visuels** : chaque section a sa couleur (barre du haut, en-tête, boutons, liens) — réception en vert,
-  sortie en rouge, commandes en bleu, achats en ambre… — et l'accueil s'anime à l'ouverture (indicateurs, tuiles).
-  Les animations s'effacent si le téléphone est réglé sur « réduire les animations » ; clair et sombre au choix.
+* **Repères visuels** : chaque section porte un émail, comme une ligne de métro (barre du haut, plaque d'en-tête,
+  boutons, liens) — réception en vert, sortie en vermillon, flux en azur, achats et inventaire en safran… ; les
+  emplacements s'affichent comme des plaques de rue bleues (« R1-A2-E2-C1 »), les historiques comme des lignes à
+  stations. Les chiffres sont grands et étroits, lisibles d'un coup d'œil. À l'ouverture de l'accueil, les commandes
+  roulent jusqu'à leur tronçon ; rien ne bouge si le téléphone est réglé sur « réduire les animations » ; clair et
+  sombre au choix.
 * **Connexion** : dépôt → nom → PIN ; au-delà de 8 personnes sur un site, un champ filtre la liste des profils.
 
 ### Rôles
@@ -173,6 +179,10 @@ codes-barres proposés par le modèle sont ignorés (codes internes attribués).
 
 ## Historique
 
+Version 3.2 : nouvelle charte graphique « Plaques & lignes » ([système de design](DESIGN.md)) — police unique
+Archivo variable (étroite pour la signalétique), émaux par section aux contrastes vérifiés par les tests, plaques et
+lignes de métro (ligne des commandes en cours sur l'accueil, trajets des transferts, historiques à stations), icônes
+et impression assorties, plus aucun effet décoratif en boucle.
 Version 3.1 : passe complète d'audit ([constats et corrections](docs/AUDIT.md#passe-4--version-31)) — calculs indexés
 (accueil 70 fois plus rapide sur un gros catalogue), douchette robuste, comptage d'inventaire au scan, historique de
 session avec annulation, codes équivalents, indicateurs justes pour les ateliers et l'entrepôt, cache hors ligne toujours

@@ -9,24 +9,9 @@
     "bytes": 56694,
     "licence": "MIT"
   },
-  "fonts/playfair-display-400.woff2": {
-    "sha256": "1fe9ad5d8b2ebd8ecb8fbd05bed1e3fdfa52dae3f1a04e1c219918442fe9394d",
-    "bytes": 21856,
-    "licence": "OFL-1.1"
-  },
-  "fonts/playfair-display-500.woff2": {
-    "sha256": "1e3429a2122b4171bf393c8de5c501820e17ca2074c498d7080e2326975d825c",
-    "bytes": 23048,
-    "licence": "OFL-1.1"
-  },
-  "fonts/playfair-display-400-italic.woff2": {
-    "sha256": "eabce94d4a69e439cd050755c31f9894ac8a78f93e58b063c6c01f370474e1de",
-    "bytes": 21884,
-    "licence": "OFL-1.1"
-  },
-  "fonts/jost-variable.woff2": {
-    "sha256": "7726a5cd6f3c0e876c028ea2a643d45f7aad4b0f164b70966c669f4a4668f4b9",
-    "bytes": 26576,
+  "fonts/archivo-variable.woff2": {
+    "sha256": "e3a28eade21a900c7155a247757f4b2834c07bb7ef07ad7efa55cebaac1e8f5e",
+    "bytes": 90104,
     "licence": "OFL-1.1"
   }
 }

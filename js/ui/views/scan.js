@@ -207,7 +207,7 @@ function knownCard(a) {
     <article class="card scan-card">
       <header class="scan-card__head">
         ${thumb(a, 'thumb--lg')}
-        <div class="grow"><p class="eyebrow">${a.family || 'Sans famille'}</p><h3 class="scan-card__name">${a.name}</h3><p class="muted num">${a.ean}${a.ref ? ` · ${a.ref}` : ''}</p></div>
+        <div class="grow"><h3 class="scan-card__name">${a.name}</h3><p class="muted num">${a.ean}${a.ref ? ` · ${a.ref}` : ''} · ${a.family || 'Sans famille'}</p></div>
         <button type="button" class="icon-btn" data-action="scan.clear" aria-label="Changer de pièce">${icon('x')}</button>
       </header>
       ${weak ? html`<p class="banner banner--info scan-card__warn">${icon('alert', 'i--sm')}<span class="banner__text">Clé de contrôle EAN inhabituelle — vérifiez le code.</span></p>` : ''}
@@ -231,7 +231,7 @@ function unknownCard() {
     <article class="card scan-card">
       <header class="scan-card__head">
         <span class="thumb thumb--lg">${icon('plus')}</span>
-        <div class="grow"><p class="eyebrow">Code inconnu</p><h3 class="scan-card__name num">${S.ean}</h3></div>
+        <div class="grow"><h3 class="scan-card__name num">${S.ean}</h3><p><span class="pill pill--low eyebrow">Code inconnu</span></p></div>
         <button type="button" class="icon-btn" data-action="scan.clear" aria-label="Changer de code">${icon('x')}</button>
       </header>
       ${S.mode !== 'in' ? html`<p class="muted">Cette pièce n'est pas encore au catalogue : il n'y a rien à ${{ out: 'sortir', find: 'consulter' }[S.mode] ?? 'transférer'}.</p>

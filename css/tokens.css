@@ -1,178 +1,164 @@
-/* Jetons de design — MODE Stock v3 « Couture ».
-   Identité : Playfair Display (titres) + Jost (interface), or et aubergine, teintes « bijou » par section.
-   Contrastes WCAG AA vérifiés par tests/unit/design-tokens.test.js (texte ≥ 4,5:1, interface ≥ 3:1,
-   texte blanc sur chaque dégradé d'en-tête ≥ 4,5:1). */
+/* Jetons de design — MODE Stock v4 « Plaques & lignes ».
+   Identité : la signalétique parisienne. Chaque lieu (dépôt, rayonnage, emplacement) est une plaque émaillée —
+   aplat sans dégradé, liseré blanc intérieur ; chaque flux (commande, livraison, transfert) est une ligne de métro —
+   rails, stations, cocardes. Police unique : Archivo variable (graisse 100–900, chasse 62–125 %), étroite et grasse
+   pour les plaques, les titres et les chiffres, normale pour le texte.
+   Contrastes WCAG AA vérifiés par tests/unit/design-tokens.test.js (texte ≥ 4,5:1, interface ≥ 3:1). */
 
-@font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: normal; font-display: swap; src: url('../fonts/playfair-display-400.woff2') format('woff2'); }
-@font-face { font-family: 'Playfair Display'; font-weight: 500; font-style: normal; font-display: swap; src: url('../fonts/playfair-display-500.woff2') format('woff2'); }
-@font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: italic; font-display: swap; src: url('../fonts/playfair-display-400-italic.woff2') format('woff2'); }
-@font-face { font-family: 'Jost'; font-weight: 300 700; font-style: normal; font-display: swap; src: url('../fonts/jost-variable.woff2') format('woff2'); }
+@font-face { font-family: 'Archivo'; font-style: normal; font-weight: 100 900; font-stretch: 62% 125%; font-display: swap; src: url('../fonts/archivo-variable.woff2') format('woff2'); }
 
 :root {
   color-scheme: light;
 
-  /* Surfaces */
-  --bg: #f6f5fa;
-  --bg-soft: #efedf5;
-  --bg-sunken: #e6e3ee;
+  /* Surfaces : porcelaine bleutée (jamais de blanc cassé « crème ») */
+  --bg: #eef1f7;
+  --bg-soft: #e6eaf3;
+  --bg-sunken: #dde2ee;
   --surface: #ffffff;
-  --overlay: rgba(20, 14, 32, 0.5);
+  --overlay: rgba(10, 16, 40, 0.55);
 
-  /* Texte */
-  --ink: #16121f;
-  --ink-2: #4a4458;
-  --ink-3: #635e72;
+  /* Texte : encre marine */
+  --ink: #0f1631;
+  --ink-2: #3b4563;
+  --ink-3: #545e7c;
   --on-ink: #ffffff;
 
   /* Traits */
-  --line: #e4e1ec;
-  --line-strong: #cbc6d8;
-  --control: #85809a; /* bordure des champs : ≥ 3:1 sur --bg */
+  --line: #dbe0eb;
+  --line-strong: #c2c9da;
+  --control: #7a83a0; /* bordure des champs : ≥ 3:1 sur --bg et --surface */
 
-  /* Or : décoratif (--gold) et texte (--gold-ink) */
-  --gold: #9f7a26;
-  --gold-ink: #74560f;
-  --gold-bg: #f8efd9;
+  /* États (texte et fond teinté) */
+  --red: #b02a17;    --red-bg: #fbe7e3;
+  --green: #0b6346;  --green-bg: #e1f2ea;
+  --amber: #7d5500;  --amber-bg: #fdf0cf;
+  --blue: #1b3d93;   --blue-bg: #e3e9f8;
 
-  /* États */
-  --red: #b3122f;     --red-bg: #fdecef;
-  --green: #0f6a40;   --green-bg: #e6f5ec;
-  --amber: #8a4f00;   --amber-bg: #fdf1dc;
-  --blue: #1d4fb8;    --blue-bg: #e8effc;
+  /* Ombres : décalées et floues, teintées d'encre — l'élévation se déclare par l'ombre seule (pas de bordure en plus) */
+  --shadow-1: 0 1px 2px rgba(15, 22, 49, 0.06), 0 4px 12px -6px rgba(15, 22, 49, 0.2);
+  --shadow-2: 0 2px 4px rgba(15, 22, 49, 0.07), 0 14px 28px -12px rgba(15, 22, 49, 0.34);
+  --shadow-3: 0 4px 10px rgba(15, 22, 49, 0.08), 0 28px 56px -18px rgba(15, 22, 49, 0.5);
 
-  /* Ombres (teintées, en couches) */
-  --shadow-xs: 0 1px 2px rgba(22, 18, 31, 0.06);
-  --shadow-sm: 0 1px 2px rgba(22, 18, 31, 0.05), 0 3px 10px rgba(22, 18, 31, 0.06);
-  --shadow-md: 0 4px 10px rgba(22, 18, 31, 0.06), 0 14px 32px rgba(22, 18, 31, 0.11);
-  --shadow-lg: 0 10px 24px rgba(22, 18, 31, 0.12), 0 30px 64px rgba(22, 18, 31, 0.2);
-
-  /* Typographie */
-  --serif: 'Playfair Display', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
-  --sans: 'Jost', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --fs-xs: 0.75rem;   /* 12 : libellés en capitales */
+  /* Typographie : échelle fixe (interface de travail), chasse étroite pour la signalétique */
+  --font: 'Archivo', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --narrow: 70%;     /* plaques, titres en capitales */
+  --narrow-num: 76%; /* chiffres */
+  --fs-xs: 0.75rem;   /* 12 */
   --fs-sm: 0.8125rem; /* 13 */
   --fs-md: 0.9375rem; /* 15 */
   --fs-base: 1rem;    /* 16 : champs (évite le zoom iOS) */
-  --fs-lg: 1.125rem;
-  --fs-xl: 1.5rem;
-  --fs-2xl: 2rem;
-  --fs-3xl: 2.75rem;
+  --fs-lg: 1.125rem;  /* 18 */
+  --fs-xl: 1.375rem;  /* 22 */
+  --fs-2xl: 1.75rem;  /* 28 */
+  --fs-3xl: 2.375rem; /* 38 */
+  --fs-4xl: 3rem;     /* 48 : plaque d'accueil */
 
   /* Espacements (échelle de 4) */
   --s1: 0.25rem; --s2: 0.5rem; --s3: 0.75rem; --s4: 1rem; --s5: 1.25rem; --s6: 1.5rem; --s8: 2rem; --s12: 3rem;
 
-  /* Formes */
-  --r-sm: 8px; --r-md: 14px; --r-lg: 20px; --r-xl: 28px; --r-pill: 999px;
+  /* Formes : petite plaque 6, contrôle 12, plaque et carte 14, feuille 20 */
+  --r-xs: 6px; --r-sm: 10px; --r-md: 12px; --r-lg: 14px; --r-xl: 20px; --r-pill: 999px;
+  --frame: 2px; /* liseré des plaques */
 
   /* Dimensions */
   --tap: 3rem;          /* 48 : cible tactile */
   --topbar-h: 3.5rem;
-  --tabbar-h: 4.25rem;  /* barre flottante (hors marge) */
-  --tabbar-gap: 0.625rem;
+  --tabbar-h: 4rem;
   --content-w: 44rem;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
-  --dock: calc(var(--tabbar-h) + var(--tabbar-gap) + var(--safe-b)); /* hauteur occupée par la barre du bas */
+  --dock: calc(var(--tabbar-h) + var(--safe-b)); /* hauteur occupée par la barre du bas */
 
-  /* Mouvement */
-  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* Mouvement : sortie exponentielle, jamais de rebond ; le mouvement dit un changement d'état */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --dur: 180ms;
-  --dur-slow: 480ms;
+  --dur-slow: 320ms;
 }
 
-/* Thème sombre : automatique selon le système (sauf data-theme="light"), ou forcé par data-theme="dark".
-   Les deux blocs portent les mêmes valeurs — un test vérifie qu'ils restent identiques. */
+/* Thème sombre « la rue la nuit » : automatique selon le système (sauf data-theme="light"), ou forcé par
+   data-theme="dark". Les deux blocs portent les mêmes valeurs — un test vérifie qu'ils restent identiques. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --bg: #0d0b12; --bg-soft: #15121c; --bg-sunken: #1d1926; --surface: #17141f; --overlay: rgba(0, 0, 0, 0.65);
-    --ink: #f4f2f9; --ink-2: #cdc8d9; --ink-3: #a29cb3; --on-ink: #16121f;
-    --line: #2a2534; --line-strong: #433c51; --control: #8c859d;
-    --gold: #d6b065; --gold-ink: #e6c47e; --gold-bg: #2b2214;
-    --red: #ff8a9b; --red-bg: #33141c;
-    --green: #6fe0a8; --green-bg: #0f2a1d;
-    --amber: #f6c46a; --amber-bg: #2e2210;
-    --blue: #94b6ff; --blue-bg: #141f3d;
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.35);
-    --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.4), 0 14px 32px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 10px 24px rgba(0, 0, 0, 0.5), 0 30px 64px rgba(0, 0, 0, 0.65);
+    --bg: #0a0f1f; --bg-soft: #0f152a; --bg-sunken: #151c35; --surface: #121933; --overlay: rgba(0, 0, 0, 0.62);
+    --ink: #f1f4fb; --ink-2: #c3cbdf; --ink-3: #9aa4bf; --on-ink: #0f1631;
+    --line: #222a46; --line-strong: #333e63; --control: #7d88a8;
+    --red: #ff9a84; --red-bg: #3a1712;
+    --green: #6ad9aa; --green-bg: #0d2a20;
+    --amber: #f5c451; --amber-bg: #33270a;
+    --blue: #a3b8ff; --blue-bg: #141f45;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px -8px rgba(0, 0, 0, 0.7);
+    --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.5), 0 16px 32px -12px rgba(0, 0, 0, 0.8);
+    --shadow-3: 0 4px 10px rgba(0, 0, 0, 0.5), 0 30px 60px -18px rgba(0, 0, 0, 0.9);
   }
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0d0b12; --bg-soft: #15121c; --bg-sunken: #1d1926; --surface: #17141f; --overlay: rgba(0, 0, 0, 0.65);
-  --ink: #f4f2f9; --ink-2: #cdc8d9; --ink-3: #a29cb3; --on-ink: #16121f;
-  --line: #2a2534; --line-strong: #433c51; --control: #8c859d;
-  --gold: #d6b065; --gold-ink: #e6c47e; --gold-bg: #2b2214;
-  --red: #ff8a9b; --red-bg: #33141c;
-  --green: #6fe0a8; --green-bg: #0f2a1d;
-  --amber: #f6c46a; --amber-bg: #2e2210;
-  --blue: #94b6ff; --blue-bg: #141f3d;
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.4), 0 14px 32px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 10px 24px rgba(0, 0, 0, 0.5), 0 30px 64px rgba(0, 0, 0, 0.65);
+  --bg: #0a0f1f; --bg-soft: #0f152a; --bg-sunken: #151c35; --surface: #121933; --overlay: rgba(0, 0, 0, 0.62);
+  --ink: #f1f4fb; --ink-2: #c3cbdf; --ink-3: #9aa4bf; --on-ink: #0f1631;
+  --line: #222a46; --line-strong: #333e63; --control: #7d88a8;
+  --red: #ff9a84; --red-bg: #3a1712;
+  --green: #6ad9aa; --green-bg: #0d2a20;
+  --amber: #f5c451; --amber-bg: #33270a;
+  --blue: #a3b8ff; --blue-bg: #141f45;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px -8px rgba(0, 0, 0, 0.7);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.5), 0 16px 32px -12px rgba(0, 0, 0, 0.8);
+  --shadow-3: 0 4px 10px rgba(0, 0, 0, 0.5), 0 30px 60px -18px rgba(0, 0, 0, 0.9);
 }
 
-/* ── Familles de teintes (identiques dans les deux thèmes) ──
-   1 : profond (haut des en-têtes, barre du haut) · 2 : vif (bas des dégradés, texte d'accent en clair)
-   3 : lumière (reflets, texte d'accent en sombre) · ink : texte d'accent sur fond clair teinté.
-   Une section de l'application porte une famille (body[data-accent]) ; un élément peut en porter une autre
-   (classe fam-…) : tuiles de l'accueil, icônes du menu… */
+/* ── Émaux : une couleur de ligne par section (identiques dans les deux thèmes) ──
+   fill : aplat de la plaque (barre du haut, en-tête, bouton principal) · on : texte et liseré posés dessus
+   text : texte d'accent sur fond clair · glow : texte d'accent sur fond sombre.
+   Une section porte un émail (body[data-accent]) ; un élément peut en porter un autre (classe fam-…). */
 html {
-  --brand-1: #241336;  --brand-2: #6e2a73;  --brand-3: #f0b45a;  --brand-ink: #6e2a73;
-  --indigo-1: #1b1a4a; --indigo-2: #4338ca; --indigo-3: #a5b4fc; --indigo-ink: #4338ca;
-  --blue-1: #0b2554;   --blue-2: #1d4ed8;   --blue-3: #93c5fd;   --blue-ink: #1d4ed8;
-  --teal-1: #042f2e;   --teal-2: #0f766e;   --teal-3: #5eead4;   --teal-ink: #0f766e;
-  --green-1: #052e1f;  --green-2: #047857;  --green-3: #6ee7b7;  --green-ink: #047857;
-  --amber-1: #3a1d04;  --amber-2: #b45309;  --amber-3: #fcd34d;  --amber-ink: #92400e;
-  --red-1: #4c0519;    --red-2: #be123c;    --red-3: #fda4af;    --red-ink: #be123c;
-  --violet-1: #2e1065; --violet-2: #6d28d9; --violet-3: #c4b5fd; --violet-ink: #6d28d9;
-  --slate-1: #0f172a;  --slate-2: #334155;  --slate-3: #cbd5e1;  --slate-ink: #334155;
-  --rose-1: #500724;   --rose-2: #be185d;   --rose-3: #f9a8d4;   --rose-ink: #be185d;
+  --brand-fill: #1b3d93;  --brand-on: #ffffff;  --brand-text: #1b3d93;  --brand-glow: #a3b8ff;  /* bleu émail */
+  --indigo-fill: #1b3d93; --indigo-on: #ffffff; --indigo-text: #1b3d93; --indigo-glow: #a3b8ff; /* consultation : bleu émail */
+  --blue-fill: #0b5cad;   --blue-on: #ffffff;   --blue-text: #0b5cad;   --blue-glow: #8cc2ff;   /* azur : flux */
+  --teal-fill: #0b6b74;   --teal-on: #ffffff;   --teal-text: #0b6b74;   --teal-glow: #6fd3d6;   /* bleu canard */
+  --green-fill: #0d6b4c;  --green-on: #ffffff;  --green-text: #0d6b4c;  --green-glow: #6ad9aa;  /* vert : entrées */
+  --amber-fill: #f3b41b;  --amber-on: #0f1631;  --amber-text: #7d5500;  --amber-glow: #f5c451;  /* safran, texte encre */
+  --red-fill: #c7361f;    --red-on: #ffffff;    --red-text: #b02a17;    --red-glow: #ff9a84;    /* vermillon : sorties */
+  --violet-fill: #6a2d8f; --violet-on: #ffffff; --violet-text: #6a2d8f; --violet-glow: #d2a5f2; /* violine */
+  --slate-fill: #2b3555;  --slate-on: #ffffff;  --slate-text: #2b3555;  --slate-glow: #c3cbe0;  /* encre */
+  --rose-fill: #b52a63;   --rose-on: #ffffff;   --rose-text: #b52a63;   --rose-glow: #ff9cc4;   /* framboise */
 }
 
-[data-accent='brand'], .fam-brand { --f1: var(--brand-1); --f2: var(--brand-2); --f3: var(--brand-3); --f-ink: var(--brand-ink); }
-[data-accent='indigo'], .fam-indigo { --f1: var(--indigo-1); --f2: var(--indigo-2); --f3: var(--indigo-3); --f-ink: var(--indigo-ink); }
-[data-accent='blue'], .fam-blue { --f1: var(--blue-1); --f2: var(--blue-2); --f3: var(--blue-3); --f-ink: var(--blue-ink); }
-[data-accent='teal'], .fam-teal { --f1: var(--teal-1); --f2: var(--teal-2); --f3: var(--teal-3); --f-ink: var(--teal-ink); }
-[data-accent='green'], .fam-green { --f1: var(--green-1); --f2: var(--green-2); --f3: var(--green-3); --f-ink: var(--green-ink); }
-[data-accent='amber'], .fam-amber { --f1: var(--amber-1); --f2: var(--amber-2); --f3: var(--amber-3); --f-ink: var(--amber-ink); }
-[data-accent='red'], .fam-red { --f1: var(--red-1); --f2: var(--red-2); --f3: var(--red-3); --f-ink: var(--red-ink); }
-[data-accent='violet'], .fam-violet { --f1: var(--violet-1); --f2: var(--violet-2); --f3: var(--violet-3); --f-ink: var(--violet-ink); }
-[data-accent='slate'], .fam-slate { --f1: var(--slate-1); --f2: var(--slate-2); --f3: var(--slate-3); --f-ink: var(--slate-ink); }
-[data-accent='rose'], .fam-rose { --f1: var(--rose-1); --f2: var(--rose-2); --f3: var(--rose-3); --f-ink: var(--rose-ink); }
+[data-accent='brand'], .fam-brand { --f: var(--brand-fill); --f-on: var(--brand-on); --f-ink: var(--brand-text); --f-glow: var(--brand-glow); }
+[data-accent='indigo'], .fam-indigo { --f: var(--indigo-fill); --f-on: var(--indigo-on); --f-ink: var(--indigo-text); --f-glow: var(--indigo-glow); }
+[data-accent='blue'], .fam-blue { --f: var(--blue-fill); --f-on: var(--blue-on); --f-ink: var(--blue-text); --f-glow: var(--blue-glow); }
+[data-accent='teal'], .fam-teal { --f: var(--teal-fill); --f-on: var(--teal-on); --f-ink: var(--teal-text); --f-glow: var(--teal-glow); }
+[data-accent='green'], .fam-green { --f: var(--green-fill); --f-on: var(--green-on); --f-ink: var(--green-text); --f-glow: var(--green-glow); }
+[data-accent='amber'], .fam-amber { --f: var(--amber-fill); --f-on: var(--amber-on); --f-ink: var(--amber-text); --f-glow: var(--amber-glow); }
+[data-accent='red'], .fam-red { --f: var(--red-fill); --f-on: var(--red-on); --f-ink: var(--red-text); --f-glow: var(--red-glow); }
+[data-accent='violet'], .fam-violet { --f: var(--violet-fill); --f-on: var(--violet-on); --f-ink: var(--violet-text); --f-glow: var(--violet-glow); }
+[data-accent='slate'], .fam-slate { --f: var(--slate-fill); --f-on: var(--slate-on); --f-ink: var(--slate-text); --f-glow: var(--slate-glow); }
+[data-accent='rose'], .fam-rose { --f: var(--rose-fill); --f-on: var(--rose-on); --f-ink: var(--rose-text); --f-glow: var(--rose-glow); }
 
-/* Dérivés d'une famille : redéclarés sur chaque porteur (une variable se résout là où elle est déclarée). */
+/* Dérivés d'un émail : redéclarés sur chaque porteur (une variable se résout là où elle est déclarée). */
 html, [data-accent], [class*='fam-'] {
-  --f-text: var(--f-ink, var(--brand-ink));
-  --f-soft: color-mix(in srgb, var(--f2, var(--brand-2)) 11%, var(--surface));
-  --f-grad: linear-gradient(135deg, var(--f1, var(--brand-1)) 0%, var(--f2, var(--brand-2)) 100%);
-  --f-glow: radial-gradient(120% 120% at 100% 0%, color-mix(in srgb, var(--f3, var(--brand-3)) 34%, transparent) 0%, transparent 48%);
-  --f-shadow: 0 10px 26px -10px color-mix(in srgb, var(--f2, var(--brand-2)) 70%, transparent);
+  --f-text: var(--f-ink, var(--brand-text));
+  --f-soft: color-mix(in srgb, var(--f, var(--brand-fill)) 10%, var(--surface));
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']), :root:not([data-theme='light']) [data-accent], :root:not([data-theme='light']) [class*='fam-'] {
-    --f-text: var(--f3, var(--brand-3));
-    --f-soft: color-mix(in srgb, var(--f3, var(--brand-3)) 13%, var(--surface));
+    --f-text: var(--f-glow, var(--brand-glow));
+    --f-soft: color-mix(in srgb, var(--f-glow, var(--brand-glow)) 14%, var(--surface));
   }
 }
 :root[data-theme='dark'], :root[data-theme='dark'] [data-accent], :root[data-theme='dark'] [class*='fam-'] {
-  --f-text: var(--f3, var(--brand-3));
-  --f-soft: color-mix(in srgb, var(--f3, var(--brand-3)) 13%, var(--surface));
+  --f-text: var(--f-glow, var(--brand-glow));
+  --f-soft: color-mix(in srgb, var(--f-glow, var(--brand-glow)) 14%, var(--surface));
 }
 
-/* Monogrammes et avatars : 10 teintes sûres (texte blanc ≥ 4,5:1), attribuées par js/ui/look.js */
-.hue-0 { --h1: #be185d; --h2: #831843; }
-.hue-1 { --h1: #7c3aed; --h2: #4c1d95; }
-.hue-2 { --h1: #4f46e5; --h2: #312e81; }
-.hue-3 { --h1: #2563eb; --h2: #1e3a8a; }
-.hue-4 { --h1: #0369a1; --h2: #0c4a6e; }
-.hue-5 { --h1: #0f766e; --h2: #134e4a; }
-.hue-6 { --h1: #047857; --h2: #064e3b; }
-.hue-7 { --h1: #b45309; --h2: #78350f; }
-.hue-8 { --h1: #be123c; --h2: #881337; }
-.hue-9 { --h1: #a21caf; --h2: #701a75; }
+/* Monogrammes, avatars et lignes de dépôt : 10 émaux sûrs (texte blanc ≥ 4,5:1), attribués par js/ui/look.js */
+.hue-0 { --h: #1b3d93; }
+.hue-1 { --h: #0b5cad; }
+.hue-2 { --h: #0b6b74; }
+.hue-3 { --h: #0d6b4c; }
+.hue-4 { --h: #5b6320; }
+.hue-5 { --h: #8a5a00; }
+.hue-6 { --h: #b02a17; }
+.hue-7 { --h: #b52a63; }
+.hue-8 { --h: #6a2d8f; }
+.hue-9 { --h: #2b3555; }

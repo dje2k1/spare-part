@@ -30,9 +30,8 @@ export function articleRow({ article, qty, status, locs, min = article.threshold
     <button type="button" class="row" data-action="${action}" data-ean="${article.ean}">
       <span class="row__lead">${thumb(article)}</span>
       <span class="row__body">
-        <span class="row__eyebrow">${article.family || '—'}</span>
         <span class="row__title">${article.name} ${statusPill(status)}</span>
-        <span class="row__meta">${locs.length ? html`${locBadge(locCode(locs[0]))}${locs.length > 1 ? html` <span class="muted">+${locs.length - 1}</span>` : ''}` : html`<span class="muted">Sans emplacement</span>`}${extra}</span>
+        <span class="row__meta">${locs.length ? html`${locBadge(locCode(locs[0]))}${locs.length > 1 ? html`<span class="muted">+${locs.length - 1}</span>` : ''}` : html`<span class="muted">Sans emplacement</span>`}${article.family ? html`<span>${article.family}</span>` : ''}${extra}</span>
       </span>
       <span class="row__trail">
         <span class="row__qty ${qtyCls}">${fmtInt(qty)}</span>
@@ -60,23 +59,25 @@ export function movementRow(h, { depot = false, now = new Date() } = {}) {
     </div>`;
 }
 
-/** En-tête de page : bandeau à la couleur de la section, pictogramme de la section (ou `icon`). */
-export function pageHead({ eyebrow = '', title, sub = '', actions = '', icon: ic = sectionIcon() }) {
+/**
+ * En-tête de page : la plaque émaillée de la section (aplat, liseré intérieur), avec la cocarde de la section
+ * (ou `icon`). Pas de sur-titre au-dessus du titre : `eyebrow` (catégorie) est accepté pour compatibilité,
+ * mais le titre parle seul.
+ */
+export function pageHead({ title, sub = '', actions = '', icon: ic = sectionIcon() }) {
   return html`
     <div class="page-head ${String(title).length > 22 ? 'page-head--long' : ''}">
-      <span class="page-head__art" aria-hidden="true">${icon(ic)}</span>
       <span class="page-head__icon" aria-hidden="true">${icon(ic)}</span>
       <div class="grow">
-        ${eyebrow ? html`<p class="eyebrow">${eyebrow}</p>` : ''}
         <h2 class="page-head__title">${title}</h2>
-        ${sub ? html`<p class="muted page-head__sub">${sub}</p>` : ''}
+        ${sub ? html`<p class="page-head__sub">${sub}</p>` : ''}
       </div>
       ${actions}
     </div>`;
 }
 
 export function emptyState({ icon: ic = 'box', title, text = '', action = '' }) {
-  return html`<div class="empty"><span class="empty__art" aria-hidden="true">${icon(ic, 'i--xl')}</span><p class="empty__title">${title}</p>${text ? html`<p>${text}</p>` : ''}${action}</div>`;
+  return html`<div class="empty"><span class="empty__art" aria-hidden="true">${icon(ic)}</span><p class="empty__title">${title}</p>${text ? html`<p>${text}</p>` : ''}${action}</div>`;
 }
 
 /** Tuile d'indicateur ; cliquable si `action` est fourni (data-action). */
