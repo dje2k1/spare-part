@@ -1,6 +1,7 @@
-/* Jetons de design — MODE Stock.
-   Identité conservée (noir, blanc, or, Playfair Display + Jost), contrastes WCAG AA vérifiés par
-   tests/unit/design-tokens.test.js (texte ≥ 4,5:1, éléments d'interface ≥ 3:1). */
+/* Jetons de design — MODE Stock v3 « Couture ».
+   Identité : Playfair Display (titres) + Jost (interface), or et aubergine, teintes « bijou » par section.
+   Contrastes WCAG AA vérifiés par tests/unit/design-tokens.test.js (texte ≥ 4,5:1, interface ≥ 3:1,
+   texte blanc sur chaque dégradé d'en-tête ≥ 4,5:1). */
 
 @font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: normal; font-display: swap; src: url('../fonts/playfair-display-400.woff2') format('woff2'); }
 @font-face { font-family: 'Playfair Display'; font-weight: 500; font-style: normal; font-display: swap; src: url('../fonts/playfair-display-500.woff2') format('woff2'); }
@@ -11,38 +12,39 @@
   color-scheme: light;
 
   /* Surfaces */
-  --bg: #ffffff;
-  --bg-soft: #f7f6f3;
-  --bg-sunken: #efede8;
+  --bg: #f6f5fa;
+  --bg-soft: #efedf5;
+  --bg-sunken: #e6e3ee;
   --surface: #ffffff;
-  --overlay: rgba(17, 17, 17, 0.55);
+  --overlay: rgba(20, 14, 32, 0.5);
 
   /* Texte */
-  --ink: #111111;
-  --ink-2: #4a4741;
-  --ink-3: #6b665d;
+  --ink: #16121f;
+  --ink-2: #4a4458;
+  --ink-3: #635e72;
   --on-ink: #ffffff;
 
   /* Traits */
-  --line: #e4e1da;
-  --line-strong: #cfcac0;
-  --control: #8a857b; /* bordure des champs : ≥ 3:1 sur --bg */
+  --line: #e4e1ec;
+  --line-strong: #cbc6d8;
+  --control: #85809a; /* bordure des champs : ≥ 3:1 sur --bg */
 
-  /* Accent or : décoratif (--gold) et texte (--gold-ink) */
-  --gold: #a08947;
-  --gold-ink: #7a6526;
-  --gold-bg: #f6f0df;
+  /* Or : décoratif (--gold) et texte (--gold-ink) */
+  --gold: #9f7a26;
+  --gold-ink: #74560f;
+  --gold-bg: #f8efd9;
 
   /* États */
-  --red: #a4161a;     --red-bg: #fbeceb;
-  --green: #17653a;   --green-bg: #e8f4ed;
-  --amber: #8a5300;   --amber-bg: #fdf2dc;
-  --blue: #1c4f9c;    --blue-bg: #e9f0fb;
+  --red: #b3122f;     --red-bg: #fdecef;
+  --green: #0f6a40;   --green-bg: #e6f5ec;
+  --amber: #8a4f00;   --amber-bg: #fdf1dc;
+  --blue: #1d4fb8;    --blue-bg: #e8effc;
 
-  /* Ombres */
-  --shadow-sm: 0 1px 2px rgba(17, 17, 17, 0.06);
-  --shadow-md: 0 6px 24px rgba(17, 17, 17, 0.12);
-  --shadow-lg: 0 18px 48px rgba(17, 17, 17, 0.22);
+  /* Ombres (teintées, en couches) */
+  --shadow-xs: 0 1px 2px rgba(22, 18, 31, 0.06);
+  --shadow-sm: 0 1px 2px rgba(22, 18, 31, 0.05), 0 3px 10px rgba(22, 18, 31, 0.06);
+  --shadow-md: 0 4px 10px rgba(22, 18, 31, 0.06), 0 14px 32px rgba(22, 18, 31, 0.11);
+  --shadow-lg: 0 10px 24px rgba(22, 18, 31, 0.12), 0 30px 64px rgba(22, 18, 31, 0.2);
 
   /* Typographie */
   --serif: 'Playfair Display', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
@@ -60,18 +62,24 @@
   --s1: 0.25rem; --s2: 0.5rem; --s3: 0.75rem; --s4: 1rem; --s5: 1.25rem; --s6: 1.5rem; --s8: 2rem; --s12: 3rem;
 
   /* Formes */
-  --r-sm: 2px; --r-md: 6px; --r-lg: 14px; --r-pill: 999px;
+  --r-sm: 8px; --r-md: 14px; --r-lg: 20px; --r-xl: 28px; --r-pill: 999px;
 
   /* Dimensions */
   --tap: 3rem;          /* 48 : cible tactile */
   --topbar-h: 3.5rem;
-  --tabbar-h: 4.25rem;
+  --tabbar-h: 4.25rem;  /* barre flottante (hors marge) */
+  --tabbar-gap: 0.625rem;
   --content-w: 44rem;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --dock: calc(var(--tabbar-h) + var(--tabbar-gap) + var(--safe-b)); /* hauteur occupée par la barre du bas */
 
+  /* Mouvement */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --dur: 180ms;
+  --dur-slow: 480ms;
 }
 
 /* Thème sombre : automatique selon le système (sauf data-theme="light"), ou forcé par data-theme="dark".
@@ -79,30 +87,92 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --bg: #0f0f0e; --bg-soft: #171715; --bg-sunken: #1f1e1b; --surface: #161614; --overlay: rgba(0, 0, 0, 0.7);
-    --ink: #f4f2ec; --ink-2: #cfcbc0; --ink-3: #a39e92; --on-ink: #111111;
-    --line: #2c2a26; --line-strong: #46433c; --control: #8b867b;
-    --gold: #c4a95a; --gold-ink: #d6bd73; --gold-bg: #2a2412;
-    --red: #ff9b93; --red-bg: #2e1715;
-    --green: #7fd3a0; --green-bg: #13261c;
-    --amber: #f2c36f; --amber-bg: #2b2110;
-    --blue: #9bbcf3; --blue-bg: #14203a;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.55);
-    --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.7);
+    --bg: #0d0b12; --bg-soft: #15121c; --bg-sunken: #1d1926; --surface: #17141f; --overlay: rgba(0, 0, 0, 0.65);
+    --ink: #f4f2f9; --ink-2: #cdc8d9; --ink-3: #a29cb3; --on-ink: #16121f;
+    --line: #2a2534; --line-strong: #433c51; --control: #8c859d;
+    --gold: #d6b065; --gold-ink: #e6c47e; --gold-bg: #2b2214;
+    --red: #ff8a9b; --red-bg: #33141c;
+    --green: #6fe0a8; --green-bg: #0f2a1d;
+    --amber: #f6c46a; --amber-bg: #2e2210;
+    --blue: #94b6ff; --blue-bg: #141f3d;
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.4), 0 14px 32px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 24px rgba(0, 0, 0, 0.5), 0 30px 64px rgba(0, 0, 0, 0.65);
   }
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0f0f0e; --bg-soft: #171715; --bg-sunken: #1f1e1b; --surface: #161614; --overlay: rgba(0, 0, 0, 0.7);
-  --ink: #f4f2ec; --ink-2: #cfcbc0; --ink-3: #a39e92; --on-ink: #111111;
-  --line: #2c2a26; --line-strong: #46433c; --control: #8b867b;
-  --gold: #c4a95a; --gold-ink: #d6bd73; --gold-bg: #2a2412;
-  --red: #ff9b93; --red-bg: #2e1715;
-  --green: #7fd3a0; --green-bg: #13261c;
-  --amber: #f2c36f; --amber-bg: #2b2110;
-  --blue: #9bbcf3; --blue-bg: #14203a;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.55);
-  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.7);
+  --bg: #0d0b12; --bg-soft: #15121c; --bg-sunken: #1d1926; --surface: #17141f; --overlay: rgba(0, 0, 0, 0.65);
+  --ink: #f4f2f9; --ink-2: #cdc8d9; --ink-3: #a29cb3; --on-ink: #16121f;
+  --line: #2a2534; --line-strong: #433c51; --control: #8c859d;
+  --gold: #d6b065; --gold-ink: #e6c47e; --gold-bg: #2b2214;
+  --red: #ff8a9b; --red-bg: #33141c;
+  --green: #6fe0a8; --green-bg: #0f2a1d;
+  --amber: #f6c46a; --amber-bg: #2e2210;
+  --blue: #94b6ff; --blue-bg: #141f3d;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.4), 0 14px 32px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 24px rgba(0, 0, 0, 0.5), 0 30px 64px rgba(0, 0, 0, 0.65);
 }
+
+/* ── Familles de teintes (identiques dans les deux thèmes) ──
+   1 : profond (haut des en-têtes, barre du haut) · 2 : vif (bas des dégradés, texte d'accent en clair)
+   3 : lumière (reflets, texte d'accent en sombre) · ink : texte d'accent sur fond clair teinté.
+   Une section de l'application porte une famille (body[data-accent]) ; un élément peut en porter une autre
+   (classe fam-…) : tuiles de l'accueil, icônes du menu… */
+html {
+  --brand-1: #241336;  --brand-2: #6e2a73;  --brand-3: #f0b45a;  --brand-ink: #6e2a73;
+  --indigo-1: #1b1a4a; --indigo-2: #4338ca; --indigo-3: #a5b4fc; --indigo-ink: #4338ca;
+  --blue-1: #0b2554;   --blue-2: #1d4ed8;   --blue-3: #93c5fd;   --blue-ink: #1d4ed8;
+  --teal-1: #042f2e;   --teal-2: #0f766e;   --teal-3: #5eead4;   --teal-ink: #0f766e;
+  --green-1: #052e1f;  --green-2: #047857;  --green-3: #6ee7b7;  --green-ink: #047857;
+  --amber-1: #3a1d04;  --amber-2: #b45309;  --amber-3: #fcd34d;  --amber-ink: #92400e;
+  --red-1: #4c0519;    --red-2: #be123c;    --red-3: #fda4af;    --red-ink: #be123c;
+  --violet-1: #2e1065; --violet-2: #6d28d9; --violet-3: #c4b5fd; --violet-ink: #6d28d9;
+  --slate-1: #0f172a;  --slate-2: #334155;  --slate-3: #cbd5e1;  --slate-ink: #334155;
+  --rose-1: #500724;   --rose-2: #be185d;   --rose-3: #f9a8d4;   --rose-ink: #be185d;
+}
+
+[data-accent='brand'], .fam-brand { --f1: var(--brand-1); --f2: var(--brand-2); --f3: var(--brand-3); --f-ink: var(--brand-ink); }
+[data-accent='indigo'], .fam-indigo { --f1: var(--indigo-1); --f2: var(--indigo-2); --f3: var(--indigo-3); --f-ink: var(--indigo-ink); }
+[data-accent='blue'], .fam-blue { --f1: var(--blue-1); --f2: var(--blue-2); --f3: var(--blue-3); --f-ink: var(--blue-ink); }
+[data-accent='teal'], .fam-teal { --f1: var(--teal-1); --f2: var(--teal-2); --f3: var(--teal-3); --f-ink: var(--teal-ink); }
+[data-accent='green'], .fam-green { --f1: var(--green-1); --f2: var(--green-2); --f3: var(--green-3); --f-ink: var(--green-ink); }
+[data-accent='amber'], .fam-amber { --f1: var(--amber-1); --f2: var(--amber-2); --f3: var(--amber-3); --f-ink: var(--amber-ink); }
+[data-accent='red'], .fam-red { --f1: var(--red-1); --f2: var(--red-2); --f3: var(--red-3); --f-ink: var(--red-ink); }
+[data-accent='violet'], .fam-violet { --f1: var(--violet-1); --f2: var(--violet-2); --f3: var(--violet-3); --f-ink: var(--violet-ink); }
+[data-accent='slate'], .fam-slate { --f1: var(--slate-1); --f2: var(--slate-2); --f3: var(--slate-3); --f-ink: var(--slate-ink); }
+[data-accent='rose'], .fam-rose { --f1: var(--rose-1); --f2: var(--rose-2); --f3: var(--rose-3); --f-ink: var(--rose-ink); }
+
+/* Dérivés d'une famille : redéclarés sur chaque porteur (une variable se résout là où elle est déclarée). */
+html, [data-accent], [class*='fam-'] {
+  --f-text: var(--f-ink, var(--brand-ink));
+  --f-soft: color-mix(in srgb, var(--f2, var(--brand-2)) 11%, var(--surface));
+  --f-grad: linear-gradient(135deg, var(--f1, var(--brand-1)) 0%, var(--f2, var(--brand-2)) 100%);
+  --f-glow: radial-gradient(120% 120% at 100% 0%, color-mix(in srgb, var(--f3, var(--brand-3)) 34%, transparent) 0%, transparent 48%);
+  --f-shadow: 0 10px 26px -10px color-mix(in srgb, var(--f2, var(--brand-2)) 70%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']), :root:not([data-theme='light']) [data-accent], :root:not([data-theme='light']) [class*='fam-'] {
+    --f-text: var(--f3, var(--brand-3));
+    --f-soft: color-mix(in srgb, var(--f3, var(--brand-3)) 13%, var(--surface));
+  }
+}
+:root[data-theme='dark'], :root[data-theme='dark'] [data-accent], :root[data-theme='dark'] [class*='fam-'] {
+  --f-text: var(--f3, var(--brand-3));
+  --f-soft: color-mix(in srgb, var(--f3, var(--brand-3)) 13%, var(--surface));
+}
+
+/* Monogrammes et avatars : 10 teintes sûres (texte blanc ≥ 4,5:1), attribuées par js/ui/look.js */
+.hue-0 { --h1: #be185d; --h2: #831843; }
+.hue-1 { --h1: #7c3aed; --h2: #4c1d95; }
+.hue-2 { --h1: #4f46e5; --h2: #312e81; }
+.hue-3 { --h1: #2563eb; --h2: #1e3a8a; }
+.hue-4 { --h1: #0369a1; --h2: #0c4a6e; }
+.hue-5 { --h1: #0f766e; --h2: #134e4a; }
+.hue-6 { --h1: #047857; --h2: #064e3b; }
+.hue-7 { --h1: #b45309; --h2: #78350f; }
+.hue-8 { --h1: #be123c; --h2: #881337; }
+.hue-9 { --h1: #a21caf; --h2: #701a75; }

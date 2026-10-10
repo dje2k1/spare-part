@@ -11,7 +11,7 @@
 <title>MODE — Gestion de Stock</title>
 <meta name="description" content="Gestion de stock de pièces détachées : scan, transferts entre dépôts, inventaire, tableau de bord.">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#241336">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -30,7 +30,7 @@
 <script src="vendor/qrcode.js" defer></script>
 <script type="module" src="js/main.js"></script>
 </head>
-<body>
+<body data-accent="brand">
 
 <!-- Icônes (sprite). Usage : <svg class="i"><use href="#i-nom"/></svg> -->
 <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -92,6 +92,10 @@
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M5 21v-6M5 11V3M12 21v-9M12 8V3M19 21v-4M19 13V3M2 15h6M9 8h6M16 17h6"/></symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H7a5 5 0 1 1 .9-9.9A6 6 0 0 1 19.4 11 4 4 0 0 1 17.5 19z"/></symbol>
     <symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="M2 2l20 20M7 7.3A5 5 0 0 0 7 19h10.5M21.2 16.6A4 4 0 0 0 19.4 11 6 6 0 0 0 10.6 6"/></symbol>
+    <!-- Dégradés des graphiques : couleurs de la section courante (classes g-stop-*, voir components.css) -->
+    <linearGradient id="g-line" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="340" y2="0"><stop offset="0" class="g-stop-a"/><stop offset="1" class="g-stop-b"/></linearGradient>
+    <linearGradient id="g-area" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="170"><stop offset="0" class="g-stop-area" stop-opacity="0.32"/><stop offset="1" class="g-stop-area" stop-opacity="0"/></linearGradient>
+    <linearGradient id="g-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fde68a"/><stop offset="1" stop-color="#f0b45a"/></linearGradient>
   </defs>
 </svg>
 

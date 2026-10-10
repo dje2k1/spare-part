@@ -37,6 +37,9 @@ Essai rapide du mode serveur : `npm ci --prefix server && npm run server:demo` p
 * **Menu** (bouton en haut à droite) : articles, transferts, plan, inventaire, étiquettes, commandes fournisseurs,
   fournisseurs, seuils intelligents, réassort, rapport, tableau de bord, journal, analyse photo, administration.
 * **Votre journée** : à la première ouverture du jour, un résumé (ce qui arrive, ce qui manque, ce qui attend).
+* **Repères visuels** : chaque section a sa couleur (barre du haut, en-tête, boutons, liens) — réception en vert,
+  sortie en rouge, commandes en bleu, achats en ambre… — et l'accueil s'anime à l'ouverture (indicateurs, tuiles).
+  Les animations s'effacent si le téléphone est réglé sur « réduire les animations » ; clair et sombre au choix.
 
 ### Rôles
 

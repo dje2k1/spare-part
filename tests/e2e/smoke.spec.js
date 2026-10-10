@@ -57,3 +57,17 @@ test('captures (design)', async ({ page }, info) => {
   await page.locator('[data-action="menu.open"]').first().click();
   await page.screenshot({ path: `${dir}/05-menu.png` });
 });
+
+test.describe('avec les animations', () => {
+  test.use({ reducedMotion: 'no-preference' });
+  test('accueil animé : compteurs, tuiles et navigation fonctionnent', async ({ page }) => {
+    await loginDemo(page, { name: 'Sophie Martin', pin: '2345', depot: 'Paris' });
+    await expect(page.locator('.tile')).toHaveCount(4);
+    await expect(page.locator('#view.is-entering')).toHaveCount(0, { timeout: 3000 }); // l'arrivée se termine
+    const value = page.locator('.hstat [data-count]').nth(1);
+    await expect(value).toHaveText(await value.getAttribute('data-count')); // le compteur atteint sa valeur
+    await page.getByTestId('tile-out').click();
+    await expect(page.locator('body')).toHaveAttribute('data-accent', 'red');
+    await expect(page.locator('#topbar-title')).toHaveText('Sortie de stock');
+  });
+});

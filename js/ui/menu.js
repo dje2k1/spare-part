@@ -1,6 +1,6 @@
 // Menu « Plus » : toutes les fonctions avancées, regroupées par usage et filtrées par rôle et par type de
 // dépôt. L'accueil reste réservé aux gestes quotidiens.
-import { html, initials } from '../lib/text.js';
+import { html } from '../lib/text.js';
 import { icon, actions, val } from './dom.js';
 import { state, db, depot, can, prefs, applyTheme, run, lockout, syncEngine } from './state.js';
 import { openDrawer, closeDrawer, openSheet, closeSheet, confirmDialog } from './dialogs.js';
@@ -12,6 +12,8 @@ import { ROLES, APP_LABEL, APP_VERSION } from '../core/config.js';
 import { hashPin, verifyPin, pinPolicy } from '../core/auth.js';
 import { changeOwnPin } from '../core/ops.js';
 import { printerSheet, printerLabel } from './views/labels.js';
+import { avatar } from './components.js';
+import { familyOf } from './look.js';
 
 let installPrompt = null;
 export const setInstallPrompt = (e) => { installPrompt = e; };
@@ -19,7 +21,7 @@ export const setInstallPrompt = (e) => { installPrompt = e; };
 const THEMES = { auto: ['Thème : automatique', 'sun'], light: ['Thème : clair', 'sun'], dark: ['Thème : sombre', 'moon'] };
 
 function item(to, ic, label, extra = '') {
-  return html`<button type="button" class="menu-item" data-action="menu.go" data-to="${to}">${icon(ic)}<span>${label}</span>${extra}</button>`;
+  return html`<button type="button" class="menu-item fam-${familyOf(to.split('?')[0])}" data-action="menu.go" data-to="${to}">${icon(ic)}<span>${label}</span>${extra}</button>`;
 }
 const group = (title, items) => {
   const list = items.filter(Boolean);
@@ -36,7 +38,7 @@ function menu() {
   const sync = syncEngine()?.status();
   return html`
     <div class="drawer__head">
-      <span class="avatar">${initials(u.name)}</span>
+      ${avatar(u.name)}
       <div class="grow"><strong>${u.name}</strong><div class="muted">${ROLES[u.role].label} · ${d.name}</div></div>
       <button type="button" class="icon-btn" data-action="drawer.close" aria-label="Fermer le menu">${icon('x')}</button>
     </div>
@@ -64,11 +66,11 @@ function menu() {
       ])}
       ${can('import') ? group('Gestion', [item('admin', 'settings', 'Administration')]) : ''}
       <p class="menu-group eyebrow">Cet appareil</p>
-      <button type="button" class="menu-item" data-action="menu.printer">${icon('printer')}<span>Imprimante : ${printerLabel()}</span></button>
-      <button type="button" class="menu-item" data-action="menu.theme">${icon(THEMES[theme][1])}<span>${THEMES[theme][0]}</span></button>
-      <button type="button" class="menu-item" data-action="menu.sound">${icon('flash')}<span>Son et vibration : ${sound ? 'activés' : 'désactivés'}</span></button>
-      <button type="button" class="menu-item" data-action="menu.pin">${icon('key')}<span>Changer mon PIN</span></button>
-      ${installPrompt ? html`<button type="button" class="menu-item" data-action="menu.install">${icon('download')}<span>Installer l'application</span></button>` : ''}
+      <button type="button" class="menu-item fam-teal" data-action="menu.printer">${icon('printer')}<span>Imprimante : ${printerLabel()}</span></button>
+      <button type="button" class="menu-item fam-violet" data-action="menu.theme">${icon(THEMES[theme][1])}<span>${THEMES[theme][0]}</span></button>
+      <button type="button" class="menu-item fam-amber" data-action="menu.sound">${icon('flash')}<span>Son et vibration : ${sound ? 'activés' : 'désactivés'}</span></button>
+      <button type="button" class="menu-item fam-slate" data-action="menu.pin">${icon('key')}<span>Changer mon PIN</span></button>
+      ${installPrompt ? html`<button type="button" class="menu-item fam-brand" data-action="menu.install">${icon('download')}<span>Installer l'application</span></button>` : ''}
     </div>
     <div class="drawer__foot">
       ${sync ? html`<button type="button" class="sync-line sync-line--${sync.tone}" data-action="sync.status">${icon(sync.tone === 'ok' ? 'cloud' : 'cloud-off', 'i--sm')}<span>${sync.text}</span></button>` : ''}

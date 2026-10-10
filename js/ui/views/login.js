@@ -1,6 +1,6 @@
 // Accueil de l'application : première installation (démo / vide / restauration) puis connexion
 // en 3 temps — dépôt, profil, PIN — au lieu de saisir nom + dépôt + PIN au clavier.
-import { html, initials } from '../../lib/text.js';
+import { html } from '../../lib/text.js';
 import { $, setHtml, icon, actions, val } from '../dom.js';
 import { store, lockout, prefs, db, state } from '../state.js';
 import { verifyPin, pinPolicy, upgradeLegacyPins } from '../../core/auth.js';
@@ -11,6 +11,8 @@ import { startSession } from '../session.js';
 import { toast } from '../toast.js';
 import { feedback } from '../feedback.js';
 import { directory, fetchDirectory, orgCode, serverLogin } from '../sync-ui.js';
+import { avatar } from '../components.js';
+import { setAccent, hueClass } from '../look.js';
 
 const L = { step: 'depot', depotId: null, userId: null, message: '' };
 
@@ -44,6 +46,7 @@ export function showLogin(message = '', { userId = null } = {}) {
   const root = $('#login');
   root.hidden = false;
   document.body.classList.add('no-tabbar');
+  setAccent('brand');
   L.message = message;
   if (state.serverMode) return showServerLogin(userId);
   if (store.isEmpty) { L.step = 'welcome'; return paint(); }
@@ -122,7 +125,7 @@ function paint() {
 function welcome() {
   return html`
     <div class="login__panel stack">
-      ${store.status.recovered ? html`<div class="card card--gold"><strong>Données illisibles.</strong> Une copie de sauvegarde a été conservée sur cet appareil. Vous pouvez restaurer un fichier de sauvegarde ou démarrer à neuf.</div>` : html`<h2 class="login__h">Bienvenue</h2><p class="muted">Comment souhaitez-vous commencer ?</p>`}
+      ${store.status.recovered ? html`<div class="card card--gold"><strong>Données illisibles.</strong> Une copie de sauvegarde a été conservée sur cet appareil. Vous pouvez restaurer un fichier de sauvegarde ou démarrer à neuf.</div>` : html`<span class="login__welcome-art" aria-hidden="true">${icon('sparkles', 'i--lg')}</span><h2 class="login__h center">Bienvenue</h2><p class="muted center">Comment souhaitez-vous commencer ?</p>`}
       <button type="button" class="btn btn--primary btn--block" data-action="login.setup" data-autofocus>${icon('plus')}Démarrer mon atelier</button>
       <button type="button" class="btn btn--secondary btn--block" data-action="login.demo">${icon('sparkles')}Explorer avec des données de démonstration</button>
       <label class="btn btn--ghost btn--block" for="restore-file">${icon('upload')}Restaurer une sauvegarde</label>
@@ -154,6 +157,7 @@ function depotStep() {
       ${L.message ? html`<p class="banner banner--info" role="status">${L.message}</p>` : ''}
       <h2 class="login__h">Où travaillez-vous ?</h2>
       <ul class="login__list">${depots.map((d, i) => html`<li><button type="button" class="login__choice" data-action="login.depot" data-id="${d.id}" ${i === 0 ? 'data-autofocus' : ''}>
+        <span class="login__ico ${d.kind === 'central' ? 'hue-2' : hueClass(d.name)}" aria-hidden="true">${icon(d.kind === 'central' ? 'store' : 'pin')}</span>
         <span class="login__choice-main"><strong>${d.name}</strong><span class="muted">${d.location || d.code}</span></span>${icon('chevron')}</button></li>`)}</ul>
       ${demoHint()}${serverFoot()}
     </div>`;
@@ -173,7 +177,7 @@ function userStep() {
       <h2 class="login__h">Qui êtes-vous ?</h2>
       <p class="muted">${d.name}</p>
       <ul class="login__list">${usersFor(L.depotId).map((u, i) => html`<li><button type="button" class="login__choice" data-action="login.user" data-id="${u.id}" ${i === 0 ? 'data-autofocus' : ''}>
-        <span class="avatar">${initials(u.name)}</span>
+        ${avatar(u.name)}
         <span class="login__choice-main"><strong>${u.name}</strong><span class="muted">${ROLES[u.role].label}</span></span>${icon('chevron')}</button></li>`)}</ul>
       ${multi ? html`<button type="button" class="btn btn--ghost btn--block" data-action="login.back">Changer de dépôt</button>` : ''}
       ${demoHint()}${serverFoot()}
@@ -185,7 +189,7 @@ function pinStep() {
   return html`
     <div class="login__panel">
       ${L.message ? html`<p class="banner banner--info" role="status">${L.message}</p>` : ''}
-      <div class="login__who"><span class="avatar">${initials(u.name)}</span><div><strong>${u.name}</strong><div class="muted">${depotOf(L.depotId)?.name ?? ''}</div></div></div>
+      <div class="login__who">${avatar(u.name)}<div><strong>${u.name}</strong><div class="muted">${depotOf(L.depotId)?.name ?? ''}</div></div></div>
       <div data-pin>
         ${dotsHtml(pinLen(u) || 4)}
         <p class="field__error pin-error center" data-err role="alert" aria-live="assertive"></p>

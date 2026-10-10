@@ -7,7 +7,11 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 const ROUTES = ['#/home', '#/articles', '#/reorder', '#/plan', '#/transfers', '#/journal', '#/inventory', '#/dashboard', '#/admin', '#/admin?s=data', '#/admin?s=users', '#/admin?s=depots', '#/photo', '#/scan/in', '#/scan/find', '#/orders', '#/order', '#/levels', '#/labels', '#/reports'];
 const CENTRAL = ['#/home', '#/orders', '#/purchases?tab=buy', '#/purchases?tab=open', '#/suppliers'];
 
+/** Les animations d'arrivée (opacité, glissement) doivent être terminées : axe mesure les contrastes réels. */
+const settled = (page) => page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' || !(a.effect?.getComputedTiming().endTime < 3000)), null, { timeout: 5000 });
+
 async function audit(page, label) {
+  await settled(page);
   const { violations } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   const summary = violations.map((v) => `${label} — ${v.id} (${v.impact}) : ${v.help}\n   ${v.nodes.slice(0, 4).map((n) => n.target.join(' ')).join('\n   ')}`);
   expect(summary, `violations d'accessibilité\n${summary.join('\n')}`).toEqual([]);
@@ -28,6 +32,7 @@ for (const scheme of ['light', 'dark']) {
     });
 
     test('écrans de l\'application', async ({ page }) => {
+      test.setTimeout(150_000); // 20 écrans, chacun audité après la fin de ses animations
       await loginDemo(page);
       for (const hash of ROUTES) {
         await go(page, hash);

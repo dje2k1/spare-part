@@ -48,3 +48,33 @@ test('thème sombre : le mode automatique et le mode forcé portent exactement l
 test('chaque jeton de couleur du thème clair a son équivalent sombre', () => {
   assert.deepEqual(Object.keys(darkAuto).sort(), Object.keys(light).sort());
 });
+
+// ── Familles de teintes (en-têtes, tuiles, icônes) et monogrammes ──
+const famBlock = /\nhtml\s*\{([\s\S]*?)\n\}/.exec(css);
+const fams = famBlock ? Object.fromEntries([...famBlock[1].matchAll(/--([a-z]+)-(1|2|3|ink):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [`${m[1]}-${m[2]}`, m[3].toLowerCase()])) : {};
+const famNames = [...new Set(Object.keys(fams).map((k) => k.split('-')[0]))];
+const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * t + parseInt(b.slice(i, i + 2), 16) * (1 - t)).toString(16).padStart(2, '0')).join('');
+
+test('familles : texte blanc lisible sur tout le dégradé (profond → vif)', () => {
+  assert.ok(famNames.length >= 8, 'familles introuvables');
+  const fails = [];
+  for (const f of famNames) for (const k of ['1', '2']) { const r = ratio('#ffffff', fams[`${f}-${k}`]); if (r < TEXT) fails.push(`blanc sur ${f}-${k} : ${r.toFixed(2)}`); }
+  assert.deepEqual(fails, []);
+});
+
+test('familles : texte d\'accent lisible en clair (fond, surface, teinte douce) et en sombre (lumière)', () => {
+  const fails = [];
+  for (const f of famNames) {
+    const ink = fams[`${f}-ink`], vivid = fams[`${f}-2`], glow = fams[`${f}-3`];
+    for (const bg of [light.bg, light.surface, light['bg-soft'], mix(vivid, light.surface, 0.11)]) { const r = ratio(ink, bg); if (r < TEXT) fails.push(`${f}-ink sur ${bg} : ${r.toFixed(2)}`); }
+    for (const bg of [darkAuto.bg, darkAuto.surface, mix(glow, darkAuto.surface, 0.13)]) { const r = ratio(glow, bg); if (r < TEXT) fails.push(`${f}-3 sur ${bg} (sombre) : ${r.toFixed(2)}`); }
+  }
+  assert.deepEqual(fails, []);
+});
+
+test('monogrammes et avatars : initiales blanches lisibles sur les 10 teintes', () => {
+  const hues = [...css.matchAll(/\.hue-\d\s*\{\s*--h1:\s*(#[0-9a-fA-F]{6});\s*--h2:\s*(#[0-9a-fA-F]{6});/g)];
+  assert.equal(hues.length, 10);
+  const fails = hues.flatMap(([, a, b]) => [a, b].filter((c) => ratio('#ffffff', c) < TEXT).map((c) => `blanc sur ${c}`));
+  assert.deepEqual(fails, []);
+});

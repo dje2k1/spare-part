@@ -1,10 +1,10 @@
 // Tableau de bord : indicateurs sur une période réelle, courbe d'évolution, flux, tops, activité, dépôts.
-import { html, fmtInt, fmtEur, initials, plural } from '../../lib/text.js';
+import { html, fmtInt, fmtEur, plural } from '../../lib/text.js';
 import { lineChart } from '../../lib/charts.js';
 import { icon, actions } from '../dom.js';
 import { db, depot, can } from '../state.js';
 import { kpis, evolution, flow, heatmap, topArticles, operatorStats, depotComparison, reorderList } from '../../core/queries.js';
-import { pageHead, segmented, kpi } from '../components.js';
+import { pageHead, segmented, kpi, avatar } from '../components.js';
 import { refresh } from '../router.js';
 
 const D = { days: 30 };
@@ -59,7 +59,7 @@ function render() {
       ${top.length ? barRows(top, (t) => t.units, (t) => t.name) : html`<p class="muted">Aucun mouvement sur la période.</p>`}</section>
 
     <section class="card dash-card"><h3 class="card__title">Activité par opérateur</h3>
-      ${ops.length ? html`<ul class="plain-list">${ops.map((o) => html`<li><span class="flex"><span class="avatar avatar--sm">${initials(o.name)}</span><span><strong>${o.name}</strong><br><span class="muted">${fmtInt(o.ins)} entrées · ${fmtInt(o.outs)} sorties</span></span></span><strong class="num">${plural(o.moves, 'mvt')}</strong></li>`)}</ul>` : html`<p class="muted">Aucune activité.</p>`}</section>
+      ${ops.length ? html`<ul class="plain-list">${ops.map((o) => html`<li><span class="flex">${avatar(o.name, 'avatar--sm')}<span><strong>${o.name}</strong><br><span class="muted">${fmtInt(o.ins)} entrées · ${fmtInt(o.outs)} sorties</span></span></span><strong class="num">${plural(o.moves, 'mvt')}</strong></li>`)}</ul>` : html`<p class="muted">Aucune activité.</p>`}</section>
 
     <section class="card dash-card"><h3 class="card__title">Heures d'activité</h3>
       <div class="heat" role="img" aria-label="Carte de chaleur de l'activité par jour et heure">
