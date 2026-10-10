@@ -45,7 +45,7 @@ function levelsBlock(a) {
   const left = pr ? daysLeft(q, pr.avgDaily) : Infinity;
   if (!pr && !can('levels.manage')) return '';
   return html`<div class="card card--soft level-card">
-    ${pr ? html`<p>${icon('chart', 'i--sm')} Consommation ≈ <strong class="num">${pr.avgDaily.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}</strong>/jour${Number.isFinite(left) ? html` · rupture estimée vers le <strong>${fmtDate(new Date(Date.now() + left * 86_400_000))}</strong>` : ''}</p>` : html`<p class="muted">Pas encore de consommation observée dans ce dépôt.</p>`}
+    ${pr ? html`<p>${icon('chart', 'i--sm')} Consommation ≈ <span class="nowrap"><strong class="num">${pr.avgDaily.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}</strong>/jour</span>${Number.isFinite(left) ? html` · rupture estimée vers le <strong>${fmtDate(new Date(Date.now() + left * 86_400_000))}</strong>` : ''}</p>` : html`<p class="muted">Pas encore de consommation observée dans ce dépôt.</p>`}
     ${pr && can('levels.manage') && (pr.min !== lv.min || pr.max !== lv.max) ? html`<p class="level-card__prop">Seuils conseillés <strong class="num">${fmtInt(pr.min)} – ${fmtInt(pr.max)}</strong> <span class="muted">(actuels ${fmtInt(lv.min)} – ${fmtInt(lv.max)})</span>
       <button type="button" class="btn btn--text" data-action="art.level.apply" data-min="${pr.min}" data-max="${pr.max}">Appliquer</button></p>` : ''}
     ${can('levels.manage') ? html`<form class="level-form" data-submit="art.level" novalidate>
@@ -164,7 +164,7 @@ export function initArticleSheet() {
     async 'art.photo'(input) {
       const f = input.files?.[0];
       if (!f) return;
-      try { SH.photo = (await shrink(f, { max: 480, quality: 0.72 })).dataUrl; } catch { toast('Image illisible.', { tone: 'error' }); return; }
+      try { SH.photo = (await shrink(f, { max: 400, quality: 0.7 })).dataUrl; } catch { toast('Image illisible.', { tone: 'error' }); return; }
       keepForm();
     },
     'art.photo.remove': () => { SH.photo = ''; keepForm(); },

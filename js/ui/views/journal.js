@@ -1,5 +1,5 @@
 // Journal : mouvements de stock et (responsables) journal d'audit, filtrables et exportables.
-import { html, fmtDateTime } from '../../lib/text.js';
+import { html, fmtDateTime, localDay } from '../../lib/text.js';
 import { stringify } from '../../lib/csv.js';
 import { isImageDataUrl } from '../../lib/image.js';
 import { icon, actions, $, setHtml, download } from '../dom.js';
@@ -81,7 +81,7 @@ export function initJournal() {
     'journal.all': (el) => { J.all = el.checked; J.limit = 80; refresh(); },
     'journal.more': () => { J.limit += 80; paintList(); },
     'journal.csv': () => {
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = localDay();
       if (J.tab === 'moves') {
         download(`mouvements-${stamp}.csv`, stringify(movesQuery(5000), [
           { label: 'Date', get: (h) => h.date }, { label: 'Dépôt', get: (h) => h.depotName }, { label: 'Type', get: (h) => MOVES[h.type]?.label ?? h.type },

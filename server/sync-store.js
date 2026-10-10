@@ -21,7 +21,10 @@ export const REPLICA_LOGS = { history: 4000, audit: 1500 }; // journaux envoyés
 
 export function createSyncStore({ dataDir, now = () => new Date(), snapshotEvery = 500, keepEvents = 5000, keepOpIds = 50_000, historyMax = 200_000, auditMax = 100_000, log = console }) {
   mkdirSync(dataDir, { recursive: true });
-  const files = { snapshot: join(dataDir, 'snapshot.json'), events: join(dataDir, 'events.jsonl'), archive: join(dataDir, 'archive-history.jsonl') };
+  const files = {
+    snapshot: join(dataDir, 'snapshot.json'), events: join(dataDir, 'events.jsonl'), archive: join(dataDir, 'archive-history.jsonl'),
+    archiveOrders: join(dataDir, 'archive-orders.jsonl'), archiveTransfers: join(dataDir, 'archive-transfers.jsonl'),
+  };
   let db = null;
   let v = 0;
   let sinceSnapshot = 0;
@@ -159,8 +162,39 @@ export function createSyncStore({ dataDir, now = () => new Date(), snapshotEvery
     return { status: 'ok', v, result: out.result };
   }
 
+  /**
+   * Archivage : commandes soldées (reçues, annulées, clôturées) et transferts terminés depuis plus de `days` jours
+   * quittent la base vivante — envoyée en entier à chaque appareil — pour des fichiers d'archive sur le serveur.
+   * Le retrait est un événement comme un autre : diffusé, journalisé, rejoué au redémarrage.
+   * @returns {{orders:number, transfers:number}}
+   */
+  function archiveOld({ days = 400 } = {}) {
+    const limit = now().getTime() - days * DAY;
+    const old = (iso) => Boolean(iso) && Date.parse(iso) < limit;
+    const orders = Object.values(db.orders).filter((o) => ['received', 'cancelled', 'closed'].includes(o.status) && old(o.receivedAt ?? o.cancelledAt ?? o.createdAt));
+    const transfers = Object.values(db.transfers).filter((t) => t.status !== 'pending' && old(t.receivedDate ?? t.cancelledDate ?? t.date));
+    if (!orders.length && !transfers.length) return { orders: 0, transfers: 0 };
+    if (orders.length) appendFileSync(files.archiveOrders, orders.map((o) => JSON.stringify(o)).join('\n') + '\n');
+    if (transfers.length) appendFileSync(files.archiveTransfers, transfers.map((t) => JSON.stringify(t)).join('\n') + '\n');
+    const out = runRecorded(db, (d) => {
+      for (const o of orders) delete d.orders[o.id];
+      for (const t of transfers) delete d.transfers[t.id];
+    });
+    v += 1;
+    const ev = { v, at: now().toISOString(), opId: uid(), name: 'archive', by: 'serveur', depotId: '', patch: out.patch };
+    appendEvent(ev);
+    remember(ev.opId, v);
+    const pub = { ...ev, patch: publicPatch(out.patch) };
+    pushRing(pub);
+    emit(pub);
+    if (sinceSnapshot >= snapshotEvery) writeSnapshot();
+    log.info?.(`archivage : ${orders.length} commande(s), ${transfers.length} transfert(s) de plus de ${days} jours`);
+    return { orders: orders.length, transfers: transfers.length };
+  }
+
   return {
     load,
+    archiveOld,
     /** Première installation : base fournie (démo ou installation vide). */
     bootstrap(initial) {
       db = initial;

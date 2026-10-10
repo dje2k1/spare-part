@@ -151,3 +151,19 @@ test('démo : tout le module tourne sur des données réalistes sans exception',
   assert.ok(p.purchaseSuggestions(db, central.id).every((g) => g.rows.length));
   assert.ok(p.purchaseOverview(db, central.id, NOW).open.length >= 1);
 });
+
+test('briefing entrepôt : pièces manquantes selon la demande CUMULÉE des commandes à servir', () => {
+  const db = orgDb();
+  db.stocks[ORG.central][EAN.button] = 8;
+  for (const key of ['opParis', 'opLyon']) {
+    const c = ctxFor(db, key);
+    const { orderId } = o.setDraftLines(db, c, { lines: [{ ean: EAN.button, qty: 5 }] });
+    o.submitOrder(db, c, { id: orderId });
+  }
+  const items = p.briefing(db, { depotId: ORG.central, role: 'manager', now: NOW });
+  const short = items.find((i) => i.key === 'shortage');
+  assert.ok(short, 'deux commandes de 5 face à un stock de 8 : la pièce manque');
+  assert.equal(short.count, 1);
+  db.stocks[ORG.central][EAN.button] = 10;
+  assert.equal(p.briefing(db, { depotId: ORG.central, role: 'manager', now: NOW }).find((i) => i.key === 'shortage'), undefined);
+});

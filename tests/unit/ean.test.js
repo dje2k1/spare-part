@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isCode, checkDigit, hasValidCheck, internalEan, nextInternalEan, ean13Modules, ean13Svg,
-  binarizeRow, runLengths, decodeEan13, decodeEan13Any,
+  binarizeRow, runLengths, decodeEan13, decodeEan13Any, codeVariants,
 } from '../../js/lib/ean.js';
 
 test('isCode : 8 à 14 chiffres uniquement', () => {
@@ -134,4 +134,15 @@ test('runLengths', () => {
   assert.deepEqual(runLengths([1, 1, 0, 1, 0, 0, 0]), [2, 1, 1, 3]);
   assert.deepEqual(runLengths([]), []);
   assert.deepEqual(runLengths([1]), [1]);
+});
+
+test('codeVariants : UPC-A ↔ EAN-13 ↔ GTIN-14 (zéros de tête), clé de contrôle conservée', () => {
+  assert.deepEqual(codeVariants('036000291452'), ['0036000291452', '00036000291452'], 'UPC-A lu → EAN-13 et GTIN-14');
+  assert.deepEqual(codeVariants('0036000291452'), ['036000291452', '00036000291452'], 'EAN-13 lu → UPC-A et GTIN-14');
+  assert.ok(codeVariants('00036000291452').includes('0036000291452'));
+  for (const v of codeVariants('036000291452')) assert.equal(hasValidCheck(v), true, `${v} garde une clé valide`);
+  assert.deepEqual(codeVariants('3700089690011'), ['03700089690011'], 'EAN-13 sans zéro : seule la forme GTIN-14');
+  assert.ok(codeVariants('00000096385074').includes('96385074'), 'EAN-8 transmis en GTIN-14');
+  assert.deepEqual(codeVariants('abc'), []);
+  assert.deepEqual(codeVariants(''), []);
 });

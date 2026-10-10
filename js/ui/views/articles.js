@@ -1,9 +1,9 @@
 // Articles : une seule liste (catalogue + stock) → une seule fiche. Réassort : pièces sous leur seuil.
-import { html, fmtInt, fmtEur, plural } from '../../lib/text.js';
+import { html, fmtInt, fmtEur, plural, localDay } from '../../lib/text.js';
 import { stringify } from '../../lib/csv.js';
 import { icon, actions, $, setHtml, download } from '../dom.js';
 import { db, depot, can } from '../state.js';
-import { searchArticles, families, reorderList, locCode } from '../../core/queries.js';
+import { searchArticles, families, reorderList, locCode, isLow } from '../../core/queries.js';
 import { pageHead, articleRow, chips, emptyState, thumb, locBadge } from '../components.js';
 import { openArticle } from './article-sheet.js';
 
@@ -12,7 +12,8 @@ let timer = null;
 
 function counts() {
   const rows = searchArticles(db(), depot().id, {});
-  return { all: rows.length, alert: rows.filter((r) => r.status !== 'ok').length, zero: rows.filter((r) => r.status === 'zero').length };
+  // Mêmes définitions que les filtres (et que l'accueil) : alerte = sous un seuil suivi ; épuisé = stock nul
+  return { all: rows.length, alert: rows.filter((r) => isLow(r.min, r.qty)).length, zero: rows.filter((r) => r.qty === 0).length };
 }
 
 function render(r) {
@@ -62,11 +63,11 @@ function renderReorder() {
     <section>
       ${pageHead({ eyebrow: 'Réassort', title: 'À réapprovisionner', sub: rows.length ? `${plural(rows.length, 'référence')} sous le seuil · coût estimé ${fmtEur(total)}` : 'Tout est au-dessus des seuils.',
         actions: rows.length ? html`<button type="button" class="btn btn--secondary btn--sm" data-action="reorder.csv">${icon('download', 'i--sm')}CSV</button>` : '' })}
-      ${rows.length ? html`<p class="pad muted">Objectif : 2 × le seuil d'alerte. Touchez une ligne pour ouvrir la fiche.</p><div class="list">${rows.map((r) => html`
+      ${rows.length ? html`<p class="pad muted">Quantité suggérée : jusqu'au stock maximum du dépôt (seuils du dépôt, sinon 2 × le seuil de la fiche), déduction faite de ce qui est déjà en route. Touchez une ligne pour ouvrir la fiche.</p><div class="list">${rows.map((r) => html`
         <button type="button" class="row" data-action="article.open" data-ean="${r.article.ean}">
           <span class="row__lead">${thumb(r.article)}</span>
           <span class="row__body"><span class="row__eyebrow">${r.article.family || '—'}</span><span class="row__title">${r.article.name}</span>
-            <span class="row__meta">En stock ${fmtInt(r.qty)} / seuil ${fmtInt(r.threshold)}${r.locs[0] ? html` · ${locBadge(locCode(r.locs[0]))}` : ''}</span></span>
+            <span class="row__meta">En stock ${fmtInt(r.qty)} / seuil ${fmtInt(r.threshold)}${r.incoming ? ` · ${fmtInt(r.incoming)} en route` : ''}${r.locs[0] ? html` · ${locBadge(locCode(r.locs[0]))}` : ''}</span></span>
           <span class="row__trail"><span class="row__qty">+${fmtInt(r.suggested)}</span><span class="row__sub">${r.cost ? fmtEur(r.cost) : 'à commander'}</span></span>
         </button>`)}</div>`
         : emptyState({ icon: 'check', title: 'Aucune alerte', text: 'Aucune pièce n\'est sous son seuil dans ce dépôt.' })}
@@ -89,7 +90,7 @@ export function initArticles() {
     'articles.more': () => { A.limit += 60; paintList(); },
     'reorder.csv': () => {
       const rows = reorderList(db(), depot().id);
-      download(`reassort-${depot().code || 'depot'}-${new Date().toISOString().slice(0, 10)}.csv`, stringify(rows, [
+      download(`reassort-${depot().code || 'depot'}-${localDay()}.csv`, stringify(rows, [
         { label: 'EAN', get: (r) => r.article.ean }, { label: 'Désignation', get: (r) => r.article.name }, { label: 'Famille', get: (r) => r.article.family },
         { label: 'Référence', get: (r) => r.article.ref }, { label: 'Stock', get: (r) => r.qty }, { label: 'Seuil', get: (r) => r.threshold },
         { label: 'Objectif', get: (r) => r.target }, { label: 'À commander', get: (r) => r.suggested }, { label: 'Prix unitaire', get: (r) => String(r.article.price).replace('.', ',') },

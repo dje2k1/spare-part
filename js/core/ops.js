@@ -195,6 +195,9 @@ export function undoMovement(db, ctx, p) {
   const h = typeof historyId === 'string' ? db.history.find((x) => x.id === historyId) : undefined;
   if (!h) fail('Mouvement introuvable.', 'notfound');
   if (h.type !== 'in' && h.type !== 'out') fail('Seules les entrées et sorties peuvent être annulées.');
+  // Une réception de commande fait partie d'un document (quantités reçues, écarts) : l'annuler ici
+  // désynchroniserait la commande et le stock.
+  if (h.orderId || h.transferId) fail('Ce mouvement fait partie d\'une commande ou d\'un transfert : corrigez le stock depuis la fiche de la pièce.');
   if (h.undone || h.undoOf) fail('Ce mouvement est déjà annulé ou est une annulation.');
   const depot = depotFor(db, ctx, h.depotId);
   if (h.operatorId !== ctx.user.id && !can(ctx.user.role, 'stock.adjust')) fail('Vous ne pouvez annuler que vos propres mouvements.', 'forbidden');
@@ -499,6 +502,8 @@ const ALIASES = {
   threshold: ['threshold', 'seuil', 'seuilalerte', 'min'],
   stock: ['stock', 'quantite', 'qte', 'qty'],
   pack: ['pack', 'conditionnement', 'colisage', 'lot'],
+  supplier: ['supplier', 'fournisseur'],
+  supplierRef: ['supplierref', 'reffournisseur', 'referencefournisseur'],
 };
 const pick = (row, keys) => { for (const k of keys) if (Object.hasOwn(row, k) && String(row[k]).trim() !== '') return row[k]; return ''; };
 
@@ -533,11 +538,19 @@ export function importCatalogue(db, ctx, rows, { dryRun = false, applyStock = fa
     if (pack !== null && Number.isNaN(pack)) { report.skipped.push({ line, reason: `conditionnement « ${clean(packRaw, 20)} » invalide` }); continue; }
     const qty = stockRaw === '' ? null : intIn(stockRaw, 0, LIMITS.maxStock);
     if (applyStock && qty !== null && Number.isNaN(qty)) { report.skipped.push({ line, reason: `quantité « ${clean(stockRaw, 20)} » invalide` }); continue; }
-    plan.push({ ean, name, family: clean(pick(row, ALIASES.family), LIMITS.short), ref: clean(pick(row, ALIASES.ref), LIMITS.ref), price, threshold, pack, qty: Number.isNaN(qty) ? null : qty });
+    // Fournisseur désigné par son nom (colonne de l'export du catalogue) : il doit déjà exister
+    const supplierName = clean(pick(row, ALIASES.supplier), LIMITS.short);
+    const supplier = supplierName ? Object.values(db.suppliers).find((x) => x.name.toLowerCase() === supplierName.toLowerCase()) : null;
+    if (supplierName && !supplier) { report.skipped.push({ line, reason: `fournisseur « ${supplierName} » inconnu (créez-le d'abord)` }); continue; }
+    plan.push({ ean, name, family: clean(pick(row, ALIASES.family), LIMITS.short), ref: clean(pick(row, ALIASES.ref), LIMITS.ref), price, threshold, pack, qty: Number.isNaN(qty) ? null : qty,
+      supplierId: supplier?.id ?? null, supplierRef: clean(pick(row, ALIASES.supplierRef), LIMITS.ref) });
   }
   for (const p of plan) {
     const a = own(db.articles, p.ean);
-    const next = { name: p.name, family: p.family || a?.family || '', ref: p.ref || a?.ref || '', price: p.price ?? a?.price ?? 0, threshold: p.threshold ?? a?.threshold ?? 0, pack: p.pack ?? a?.pack ?? 1 };
+    const next = {
+      name: p.name, family: p.family || a?.family || '', ref: p.ref || a?.ref || '', price: p.price ?? a?.price ?? 0, threshold: p.threshold ?? a?.threshold ?? 0, pack: p.pack ?? a?.pack ?? 1,
+      supplierId: p.supplierId ?? a?.supplierId ?? '', supplierRef: p.supplierRef || a?.supplierRef || '',
+    };
     const changed = !a || Object.keys(next).some((k) => a[k] !== next[k]);
     if (!a) report.created++; else if (changed) report.updated++; else report.unchanged++;
     const cur = stockOf(db, depot.id, p.ean);

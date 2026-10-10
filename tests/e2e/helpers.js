@@ -104,3 +104,23 @@ export async function scribble(page, selector) {
   await page.mouse.move(box.x + 140, box.y + 25, { steps: 6 });
   await page.mouse.up();
 }
+
+/**
+ * Douchette émulée dans la page : rafale de touches sur l'horloge de la page (insensible à la charge de la machine de
+ * test), avec l'insertion des caractères dans le champ qui a le focus, comme le ferait le navigateur.
+ */
+export async function wedge(page, code) {
+  await page.evaluate((text) => {
+    const fire = (key) => {
+      const el = document.activeElement || document.body;
+      const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      el.dispatchEvent(ev);
+      if (!ev.defaultPrevented && key.length === 1 && el.matches?.('input, textarea')) {
+        el.value += key;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    };
+    for (const ch of text) fire(ch);
+    fire('Enter');
+  }, String(code));
+}

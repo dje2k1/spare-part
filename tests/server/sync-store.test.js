@@ -227,3 +227,48 @@ test('restauration : événement de remise à zéro, persistant après redémarr
   again.close();
   rmSync(dir, { recursive: true });
 });
+
+test('archivage : commandes soldées et transferts terminés anciens retirés, archivés, diffusés, et rejoués au redémarrage', async () => {
+  const { dir, store, db } = await fresh();
+  const DAY = 86_400_000;
+  const long = new Date(Date.now() - 500 * DAY).toISOString();
+  const recent = new Date(Date.now() - 30 * DAY).toISOString();
+  const atelier = depotByCode(db, 'DEP-01').id;
+  const central = Object.values(db.depots).find((d) => d.kind === 'central').id;
+  const ean = Object.keys(db.articles)[0];
+  const order = (id, status, at) => ({ id, kind: 'internal', no: 900, status, depotId: atelier, sourceId: central, lines: [{ ean, name: 'x', qty: 1, shipped: 1, received: 1 }], createdAt: at, createdBy: 'x', receivedAt: at });
+  const transfer = (id, status, at) => ({ id, ean, name: 'x', qty: 1, fromDepotId: atelier, fromDepotName: 'A', toDepotId: central, toDepotName: 'C', operator: 'x', date: at, status, ...(status === 'done' ? { receivedDate: at } : {}) });
+  // Écriture directe (préparation du test) puis instantané : l'état de départ contient des documents anciens
+  Object.assign(store.db.orders, { oldorder0001: order('oldorder0001', 'received', long), neworder0001: order('neworder0001', 'received', recent), openorder001: { ...order('openorder001', 'submitted', long), receivedAt: undefined } });
+  Object.assign(store.db.transfers, { oldtransfer1: transfer('oldtransfer1', 'done', long), pendtransfer: transfer('pendtransfer', 'pending', long) });
+  store.flush();
+  const replica = structuredClone(publicDb(store.db));
+  const seen = [];
+  store.subscribe((ev) => seen.push(ev));
+  const r = store.archiveOld({ days: 400 });
+  assert.ok(r.orders >= 1 && r.transfers >= 1);
+  assert.equal(store.db.orders.oldorder0001, undefined, 'commande soldée ancienne archivée');
+  assert.ok(store.db.orders.neworder0001, 'commande récente conservée');
+  assert.ok(store.db.orders.openorder001, 'commande ouverte conservée, même ancienne');
+  assert.equal(store.db.transfers.oldtransfer1, undefined);
+  assert.ok(store.db.transfers.pendtransfer, 'transfert en cours conservé');
+  assert.match(readFileSync(join(dir, 'archive-orders.jsonl'), 'utf8'), /oldorder0001/);
+  assert.match(readFileSync(join(dir, 'archive-transfers.jsonl'), 'utf8'), /oldtransfer1/);
+  // Diffusé aux appareils comme une opération : leur copie suit
+  assert.equal(seen.length, 1);
+  applyPatch(replica, seen[0].patch);
+  assert.equal(replica.orders.oldorder0001, undefined);
+  assert.ok(replica.orders.neworder0001);
+  assert.equal(stateHash(replica), stateHash(store.db), 'copie de l\'appareil identique à la base du serveur');
+  assert.deepEqual(store.archiveOld({ days: 400 }), { orders: 0, transfers: 0 }, 'rien de plus à archiver');
+  // Redémarrage : le journal rejoue le retrait
+  const v = store.version;
+  store.close();
+  const again = createSyncStore({ dataDir: dir, log: silent });
+  assert.equal(again.load(), true);
+  assert.equal(again.version, v);
+  assert.equal(again.db.orders.oldorder0001, undefined);
+  assert.ok(again.db.orders.neworder0001);
+  again.close();
+  rmSync(dir, { recursive: true });
+});

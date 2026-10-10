@@ -5,7 +5,7 @@ import { html, fmtInt, plural } from '../../lib/text.js';
 import { isCode } from '../../lib/ean.js';
 import { icon, actions, $, setHtml, val } from '../dom.js';
 import { db, depot, can, run } from '../state.js';
-import { stockOf, levelOf, reorderList, searchArticles, incomingQty } from '../../core/queries.js';
+import { stockOf, levelOf, reorderList, searchArticles, resolveEan } from '../../core/queries.js';
 import { draftFor, orderLabel } from '../../core/planning.js';
 import { setDraftLines, submitOrder, discardDraft } from '../../core/ops-orders.js';
 import { centralDepot } from '../../core/ops-kit.js';
@@ -78,8 +78,9 @@ function setLine(ean, qty) {
   refresh();
 }
 
-function addEan(code, qty) {
-  if (!isCode(code) || !db().articles[code]) { feedback('error'); toast(`Code ${code} inconnu du catalogue.`, { tone: 'error' }); return false; }
+function addEan(scanned, qty) {
+  const code = resolveEan(db(), scanned);
+  if (!code) { feedback('error'); toast(`Code ${scanned} inconnu du catalogue.`, { tone: 'error' }); return false; }
   feedback('scan');
   const cur = draft()?.lines.find((l) => l.ean === code)?.qty ?? 0;
   setLine(code, cur + (qty ?? packOf(code)));
@@ -152,6 +153,4 @@ export function initCart() {
   });
 }
 
-/** Nombre de pièces en route vers l'atelier (affiché dans la fiche article). */
-export const onTheWay = (ean) => incomingQty(db(), depot().id, ean);
 export const canOrder = () => can('order.request') && depot().kind !== 'central' && Boolean(centralDepot(db()));

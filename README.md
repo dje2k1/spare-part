@@ -5,7 +5,8 @@ codes-barres, sorties et réceptions, commandes des ateliers au central (prépar
 écarts), commandes fournisseurs, seuils intelligents, étiquettes, inventaire guidé, briefing quotidien et rapport hebdomadaire.
 PWA mobile d'abord (iPhone et Android), utilisable hors ligne, thème clair / sombre, aucune compilation.
 
-> Version 3 · pensée pour les magasiniers : un accueil simple à quatre tuiles, les fonctions avancées dans le menu.
+> Version 3.1 · pensée pour les magasiniers : un accueil simple à quatre tuiles, les fonctions avancées dans le menu ;
+> fluide sur un vrai catalogue (des milliers de pièces, des centaines de commandes).
 
 ## Deux façons de l'utiliser
 
@@ -34,12 +35,20 @@ Essai rapide du mode serveur : `npm ci --prefix server && npm run server:demo` p
   attendues, alertes, commandes à préparer).
 * **Gestes** : chaque écran de travail se pilote au scan (contrôle de la pièce, quantité, retour sonore et vibration),
   avec annulation immédiate ; aucune action n'est perdue par un double appui.
+* **Douchette** (lecteur Bluetooth/USB en mode clavier) : utilisable partout, même si un champ quantité a le focus — la
+  rafale est reconnue, le champ retrouve sa valeur et le code est traité comme un scan. Les écritures d'un même code
+  (UPC-A sur 12 chiffres, EAN-13, GTIN-14) retrouvent la même pièce : pas de doublon créé.
+* **Sortie, entrée, transfert** : stock disponible rappelé, bouton « Tout (N) », dépassement signalé avant validation ;
+  l'historique de la session de scan permet d'annuler une saisie même après la disparition du message (15 min ; un
+  transfert tant qu'il n'est pas reçu).
+* **Inventaire guidé** : comptage au scan (chaque lecture ajoute 1, à la douchette ou à la caméra), ou à la main.
 * **Menu** (bouton en haut à droite) : articles, transferts, plan, inventaire, étiquettes, commandes fournisseurs,
   fournisseurs, seuils intelligents, réassort, rapport, tableau de bord, journal, analyse photo, administration.
 * **Votre journée** : à la première ouverture du jour, un résumé (ce qui arrive, ce qui manque, ce qui attend).
 * **Repères visuels** : chaque section a sa couleur (barre du haut, en-tête, boutons, liens) — réception en vert,
   sortie en rouge, commandes en bleu, achats en ambre… — et l'accueil s'anime à l'ouverture (indicateurs, tuiles).
   Les animations s'effacent si le téléphone est réglé sur « réduire les animations » ; clair et sombre au choix.
+* **Connexion** : dépôt → nom → PIN ; au-delà de 8 personnes sur un site, un champ filtre la liste des profils.
 
 ### Rôles
 
@@ -98,16 +107,19 @@ automatiquement ; **toute mutation passe par une opération du registre** via `r
 
 ### Tests
 
-* **Unitaires** (≈ 170) : schéma et migrations, stockage transactionnel, PIN et verrouillage, chaque opération métier
+* **Unitaires** (≈ 180) : schéma et migrations, stockage transactionnel, PIN et verrouillage, chaque opération métier
   (limites, rôles, cloisonnement, commandes, reliquats, achats), enregistreur de deltas (retour arrière, application à une
-  copie), seuils intelligents et prévisions, étiquettes, CSV, EAN-13, QR, IA, contrastes WCAG, cohérence PWA, règles
-  statiques (syntaxe de tous les modules, imports inutiles, `innerHTML`, gestionnaires en ligne, ARIA).
-* **Serveur** (≈ 40, contre le vrai serveur) : journal (doublons, refus sans effet, identité imposée, reprise après arrêt
-  brutal et ligne tronquée, journal corrompu refusé), API (code d'accès, verrouillage, cookie `HttpOnly`, CSRF, jetons
-  forgés, révocation, sauvegarde/restauration, fichiers non servis, en-têtes), temps réel (SSE, `Last-Event-ID`),
+  copie), seuils intelligents et prévisions, indicateurs, étiquettes, CSV, EAN-13 et codes équivalents, QR, IA, contrastes
+  WCAG, cohérence PWA (empreinte du cache), règles statiques (syntaxe de tous les modules, imports inutiles, `innerHTML`,
+  gestionnaires en ligne, ARIA) et **montée en charge** (3 000 pièces, 1 200 commandes : chaque écran sous budget).
+* **Serveur** (≈ 47, contre le vrai serveur) : journal (doublons, refus sans effet, identité imposée, reprise après arrêt
+  brutal et ligne tronquée, journal corrompu refusé, archivage), API (code d'accès, verrouillage, cookie `HttpOnly`, CSRF,
+  jetons forgés, cookie mal encodé, révocation, purge des sessions, sauvegarde/restauration, sauvegardes quotidiennes,
+  fichiers non servis, compression, en-têtes), temps réel (SSE, `Last-Event-ID`),
   **moteur de synchronisation** (deux appareils, hors ligne avec redémarrage, conflit entre sites, réponse perdue,
   session expirée, divergence détectée et corrigée), relais IA (API Anthropic simulée, quota, erreurs).
-* **E2E** (≈ 75, Chromium mobile 390 px) : tous les écrans et parcours, sécurité, hors-ligne, mise à jour du service
+* **E2E** (≈ 90, Chromium mobile 390 px) : tous les écrans et parcours, douchette (y compris dans un champ), comptage
+  d'inventaire au scan, historique de session, sécurité, hors-ligne, mise à jour du service
   worker, accessibilité axe-core (WCAG 2.1 A/AA, clair et sombre) ; **mode serveur** avec un vrai serveur par test :
   appareil neuf, temps réel entre deux navigateurs, saisie hors ligne puis envoi, application rouverte sans réseau,
   conflit signalé, compte supprimé, analyse photo relayée. Tout test échoue sur une erreur JS, une violation de CSP ou une
@@ -116,8 +128,11 @@ automatiquement ; **toute mutation passe par une opération du registre** via `r
 ## Données et sauvegarde
 
 * **Mode serveur** : la base fait foi sur le serveur (journal écrit sur disque avant chaque réponse + instantanés).
-  Sauvegarde : Administration → Données → *Télécharger la sauvegarde du serveur*, et sauvegarde du volume Docker
-  ([guide](docs/DEPLOIEMENT.md#6-sauvegardes)). Chaque appareil garde une copie locale (IndexedDB) pour le hors-ligne.
+  Une sauvegarde complète est faite **chaque jour** sur le serveur (14 jours conservés, téléchargeables depuis
+  Administration → Données) ; en plus : *Télécharger la sauvegarde du serveur* et sauvegarde du volume Docker
+  ([guide](docs/DEPLOIEMENT.md#6-sauvegardes)). Les commandes soldées et transferts terminés depuis plus de 13 mois
+  sont archivés sur le serveur : la base envoyée aux appareils reste légère. Chaque appareil garde une copie locale
+  (IndexedDB) pour le hors-ligne.
 * **Mode autonome** : tout est dans le navigateur (`localStorage`) ; **effacer les données du site ou changer d'appareil fait
   perdre la base** : exportez régulièrement une sauvegarde (un rappel s'affiche).
 
@@ -148,14 +163,20 @@ codes-barres proposés par le modèle sont ignorés (codes internes attribués).
 
 ## Déployer / mettre à jour
 
-1. Modifier le code, **`npm run sw`**, puis `npm test`. `pwa.test.js` échoue si la liste de pré-cache est périmée.
-2. Incrémenter `APP_VERSION` (`js/core/config.js`) pour toute livraison : les appareils reçoivent un bandeau
-   « Mettre à jour », jamais de rechargement imposé en pleine saisie.
+1. Modifier le code, **`npm run sw`**, puis `npm test`. `pwa.test.js` échoue si la liste de pré-cache ou l'empreinte
+   du contenu sont périmées : la version du cache (`sw.js`) intègre une empreinte de tous les fichiers servis, si bien
+   que chaque livraison renouvelle le cache des appareils, même sans changement de numéro de version.
+2. Incrémenter `APP_VERSION` (`js/core/config.js`) pour toute livraison notable (numéro affiché) : les appareils
+   reçoivent un bandeau « Mettre à jour », jamais de rechargement imposé en pleine saisie.
 3. Mode serveur : `git pull && docker compose up -d --build` sur le serveur. Mode autonome : pousser sur la branche servie
    par GitHub Pages.
 
 ## Historique
 
+Version 3.1 : passe complète d'audit ([constats et corrections](docs/AUDIT.md#passe-4--version-31)) — calculs indexés
+(accueil 70 fois plus rapide sur un gros catalogue), douchette robuste, comptage d'inventaire au scan, historique de
+session avec annulation, codes équivalents, indicateurs justes pour les ateliers et l'entrepôt, cache hors ligne toujours
+renouvelé, sauvegardes quotidiennes et archivage côté serveur, fichiers compressés.
 Version 3 : entrepôt central et ateliers, commandes internes et fournisseurs, seuils intelligents, étiquettes thermiques et
 bureautiques, briefing et rapport, serveur de synchronisation et relais IA, nouvel accueil magasinier. Version 2 : refonte
 modulaire (PWA hors-ligne, tests, sécurité) — voir `docs/AUDIT.md`. Les anciennes pages `index-old.html` et `index2.html`

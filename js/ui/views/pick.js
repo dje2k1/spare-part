@@ -5,7 +5,7 @@ import { html, fmtInt, fmtRelative, plural } from '../../lib/text.js';
 import { isCode } from '../../lib/ean.js';
 import { icon, actions, $, setHtml, val, whenReleased } from '../dom.js';
 import { state, db, can, run } from '../state.js';
-import { locCode, stockOf } from '../../core/queries.js';
+import { locCode, stockOf, resolveEan } from '../../core/queries.js';
 import { pickList, orderLabel } from '../../core/planning.js';
 import { claimOrder, releaseOrder, shipOrder, cancelOrder } from '../../core/ops-orders.js';
 import { pageHead, emptyState } from '../components.js';
@@ -36,7 +36,7 @@ function lineRow(l) {
     <span class="pick-loc num">${l.loc ? locCode(l.loc) : '—'}</span>
     <span class="row__body"><span class="row__title">${l.name}</span>
       <span class="row__meta">Demandé ${fmtInt(l.qty)} · dispo ${fmtInt(l.avail)}</span>
-      ${q < l.qty ? html`<span class="row__meta ${l.short ? 'text-red' : 'text-amber'}">${l.short && q === l.avail ? `Rupture partielle : ${fmtInt(l.qty - q)} en reliquat` : `${fmtInt(l.qty - q)} non préparé(s)`}</span>` : ''}</span>
+      ${q < l.qty ? html`<span class="row__meta ${l.short ? 'text-red' : 'text-amber'}">${l.short && q === l.avail ? `${l.avail ? 'Rupture partielle' : 'Rupture'} : ${fmtInt(l.qty - q)} en reliquat` : `${fmtInt(l.qty - q)} non préparé(s)`}</span>` : ''}</span>
     <span class="mini-qty"><button type="button" class="mini-qty__btn" data-action="pick.step" data-ean="${l.ean}" data-delta="-1" aria-label="Une de moins">${icon('minus', 'i--sm')}</button>
       <input class="mini-qty__input num" type="number" inputmode="numeric" min="0" max="${Math.min(l.qty, l.avail)}" value="${q}" aria-label="Quantité préparée de ${l.name}" data-change="pick.qty" data-ean="${l.ean}">
       <button type="button" class="mini-qty__btn" data-action="pick.step" data-ean="${l.ean}" data-delta="1" aria-label="Une de plus">${icon('plus', 'i--sm')}</button></span>
@@ -60,6 +60,7 @@ function body() {
     ${codeBar({ id: 'pick-q', placeholder: 'Scanner chaque pièce prélevée', submit: 'pick.find', camera: 'pick.camera' })}
     <ul class="list">${list.map(lineRow)}</ul>
     <div class="pad stack">
+      ${!units ? html`<p class="banner banner--info" role="status">${icon('info', 'i--sm')}<span class="banner__text">${list.every((l) => !l.avail) ? `Aucune pièce de cette commande n'est en stock : libérez-la pour plus tard${can('order.manage') ? ', ou refusez-la avec un motif' : ' et prévenez un responsable'}.` : 'Saisissez ou scannez les quantités préparées pour pouvoir expédier.'}</span></p>` : ''}
       ${missing ? html`<label class="check"><input type="checkbox" data-change="pick.backorder" ${P.backorder ? 'checked' : ''}><span>Créer un reliquat pour ce qui manque <span class="muted">(nouvelle commande, rien à ressaisir)</span></span></label>` : ''}
       <div class="flex flex--wrap">
         <button type="button" class="btn btn--ghost btn--sm" data-action="pick.release">Libérer la commande</button>
@@ -89,6 +90,7 @@ function onCode(code) {
   const o = order();
   if (!o || !mine(o)) return false;
   if (!isCode(code)) { feedback('error'); toast('Code non reconnu.', { tone: 'error' }); return true; }
+  code = resolveEan(db(), code) ?? code;
   const l = o.lines.find((x) => x.ean === code);
   if (!l) { feedback('error'); toast(db().articles[code] ? `${db().articles[code].name} n'est pas dans cette commande.` : `Code ${code} inconnu.`, { tone: 'error' }); return true; }
   feedback('scan');

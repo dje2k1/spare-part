@@ -5,7 +5,7 @@ import { html, fmtInt, fmtLongDate, plural } from '../../lib/text.js';
 import { isCode } from '../../lib/ean.js';
 import { icon, actions, $$ } from '../dom.js';
 import { state, db, depot, can } from '../state.js';
-import { pendingIncoming, reorderList, kpis, flow } from '../../core/queries.js';
+import { pendingIncoming, reorderList, kpis, flow, resolveEan } from '../../core/queries.js';
 import { atelierOrders, centralQueue, purchaseOverview, briefing } from '../../core/planning.js';
 import { APP_LABEL, DEPOT_KINDS } from '../../core/config.js';
 import { navigate } from '../router.js';
@@ -47,7 +47,7 @@ function tiles() {
 /** Trois indicateurs du héros : santé du stock (anneau), alertes, flux du jour (réception ou préparation). */
 function heroStats(d, now) {
   const k = kpis(db(), d.id, { days: 7, now });
-  const health = k.refs ? Math.round(((k.refs - k.alerts) / k.refs) * 100) : 100;
+  const health = k.serviceRate; // même calcul que le tableau de bord : pièces suivies au-dessus de leur seuil
   const third = d.kind === 'central'
     ? { to: 'orders', value: centralQueue(db(), d.id).toPrepare.length, label: 'À préparer' }
     : { to: 'orders', value: atelierOrders(db(), d.id).toReceive.length + pendingIncoming(db(), d.id).length, label: 'À recevoir' };
@@ -153,7 +153,8 @@ export const homeRoute = {
     stopWedge = listenWedge((code) => {
       if (!isCode(code)) { feedback('error'); toast('Code non reconnu.', { tone: 'error' }); return; }
       feedback('scan');
-      if (db().articles[code]) openArticle(code);
+      const known = resolveEan(db(), code);
+      if (known) openArticle(known);
       else toast(`Code ${code} inconnu du catalogue.`, { tone: 'error', action: can('article.create') ? { label: 'Créer', run: () => navigate('scan/in', { params: { ean: code } }) } : undefined });
     });
   },

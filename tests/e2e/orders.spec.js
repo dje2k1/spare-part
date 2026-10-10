@@ -1,7 +1,7 @@
 // Parcours v3 de bout en bout (un seul appareil, base locale) : l'atelier commande, l'entrepôt prépare et
 // expédie (reliquat), l'atelier réceptionne (écart) ; commande fournisseur ; seuils ; étiquettes ; rapport.
 import { readFileSync } from 'node:fs';
-import { test, expect, loginDemo, login, db, go, toastText } from './helpers.js';
+import { test, expect, loginDemo, login, db, go, toastText, wedge } from './helpers.js';
 
 const SOPHIE = { name: 'Sophie Martin', pin: '2345', depot: 'Paris' };
 const KARIM = { name: 'Karim Benali', pin: '2468', depot: 'Entrepôt' };
@@ -170,8 +170,7 @@ test('rapport hebdomadaire et consultation par douchette depuis l\'accueil', asy
   const d = await db(page);
   const zip = Object.values(d.articles).find((a) => a.name.startsWith('Zip YKK 20cm'));
   await page.locator('body').click({ position: { x: 5, y: 5 } });
-  await page.keyboard.type(zip.ean);
-  await page.keyboard.press('Enter');
+  await wedge(page, zip.ean);
   await expect(page.locator('#sheet .sheet__title')).toHaveText(zip.name);
   await page.locator('#sheet [data-action="sheet.close"]').first().click();
   await go(page, '#/reports');

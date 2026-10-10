@@ -48,7 +48,7 @@ body.no-tabbar .tabbar { display: none; }
 .pad { padding: var(--s4); }
 .pad .list, .pad--x .list, .scan .list, .stack .list, .labels__panel .list, .sheet-sec.list { margin-left: 0; margin-right: 0; }
 .sticky-tools { position: sticky; top: calc(var(--topbar-h) + var(--safe-t)); z-index: 20; margin-bottom: var(--s3); padding-bottom: var(--s1); background: color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-.searchbar { position: relative; padding: var(--s3) var(--s4) 0; }
+.searchbar { display: block; position: relative; padding: var(--s3) var(--s4) 0; }
 .searchbar .i { position: absolute; left: calc(var(--s4) + 0.95rem); top: calc(var(--s3) + 0.95rem); color: var(--f-text); pointer-events: none; }
 .searchbar .input { padding-left: 2.85rem; border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--shadow-sm); }
 
@@ -159,6 +159,8 @@ body.no-tabbar .tabbar { display: none; }
 .grid2 .field + .field { margin-top: 0; }
 .recap { position: sticky; bottom: calc(var(--dock) + var(--s2)); display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s2) var(--s2) var(--s2) var(--s4); border: 1px solid var(--line); border-radius: var(--r-pill); background: color-mix(in srgb, var(--surface) 90%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: var(--shadow-md); font-size: var(--fs-md); animation: rise 360ms var(--ease-spring) both; }
 .recap .i { color: var(--green); vertical-align: -0.2rem; }
+.recap__sum { flex: 1; min-width: 0; text-align: left; padding: var(--s2) 0; font: inherit; color: inherit; }
+.recap .btn--text { padding-inline: var(--s2); }
 .recap__in { color: var(--green); font-weight: 700; } .recap__out { color: var(--red); font-weight: 700; }
 
 /* ── Outils de liste (articles, journal) ── */

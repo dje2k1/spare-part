@@ -45,11 +45,17 @@ export function safeEqual(a, b) {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+/**
+ * Cookies de la requête. Un cookie mal encodé (« % » isolé, posé par une autre application du même domaine)
+ * est ignoré : il ne doit jamais faire échouer la requête (sinon : erreur 500 sur toute l'API).
+ */
 export function parseCookies(header = '') {
-  const out = {};
+  const out = Object.create(null);
   for (const part of String(header).split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    const name = part.slice(0, i).trim();
+    try { out[name] = decodeURIComponent(part.slice(i + 1).trim()); } catch { /* valeur illisible : ignorée */ }
   }
   return out;
 }
@@ -81,7 +87,18 @@ export function createAuth({ store, dataDir, orgCode, sessionHours = 12, now = (
 
   const checkOrg = (code) => Boolean(orgCode) && safeEqual(String(code ?? '').trim().toUpperCase(), String(orgCode).trim().toUpperCase());
 
+  /** Retire les sessions expirées (appareils perdus, jamais revenus) : sessions.json ne grossit pas indéfiniment. */
+  function purge() {
+    let n = 0;
+    for (const [k, s] of sessions) if (s.exp <= now()) { sessions.delete(k); n++; }
+    if (n) persist();
+    return n;
+  }
+  const purgeTimer = setInterval(purge, 3_600_000);
+  purgeTimer.unref?.();
+
   return {
+    purge,
     COOKIE,
     checkOrg,
     /** Code d'accès vérifié avec limitation des échecs par adresse. @returns 'ok' | 'bad' | 'blocked' */
@@ -149,6 +166,6 @@ export function createAuth({ store, dataDir, orgCode, sessionHours = 12, now = (
       for (const k of [...sessions.keys()]) if (k !== exceptKey) sessions.delete(k);
       persist();
     },
-    close() { clearTimeout(saveTimer); try { writeFileSync(file, JSON.stringify(Object.fromEntries(sessions))); } catch { /* ignoré */ } },
+    close() { clearTimeout(saveTimer); clearInterval(purgeTimer); try { writeFileSync(file, JSON.stringify(Object.fromEntries(sessions))); } catch { /* ignoré */ } },
   };
 }

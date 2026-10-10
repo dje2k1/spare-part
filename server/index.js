@@ -45,6 +45,8 @@ const app = await createApp({
   ai: { apiKey: env.ANTHROPIC_API_KEY, baseURL: env.ANTHROPIC_BASE_URL, dailyLimit: Number(env.AI_DAILY_LIMIT) || 40 },
   trustProxy: env.TRUST_PROXY === '1',
   sessionHours: Number(env.SESSION_HOURS) || 12,
+  backupKeep: env.BACKUP_KEEP === undefined || env.BACKUP_KEEP === '' ? 14 : Math.max(0, Number(env.BACKUP_KEEP) || 0),
+  archiveDays: env.ARCHIVE_DAYS === undefined || env.ARCHIVE_DAYS === '' ? 400 : Math.max(0, Number(env.ARCHIVE_DAYS) || 0),
   log,
 }).catch((e) => fail(e.message));
 
@@ -53,6 +55,7 @@ const host = env.HOST || '0.0.0.0';
 app.server.listen(port, host, () => {
   log.info(`MODE Stock — serveur prêt sur http://${host}:${port} (données : ${env.DATA_DIR || 'server/data'}, version ${app.store.version})`);
   log.info(`Analyse photo : ${app.ai ? `activée (${app.ai.model}, ${app.ai.dailyLimit} analyses/jour/compte)` : 'désactivée (ANTHROPIC_API_KEY absente)'}`);
+  log.info(`Sauvegardes automatiques : ${app.backups ? `quotidiennes, ${app.backups.keep} jours conservés (dossier backups/)` : 'désactivées (BACKUP_KEEP=0)'}`);
   if (demo) log.warn('MODE DÉMONSTRATION : comptes et PIN d\'essai visibles à la connexion. Ne pas utiliser en production.');
   if (orgCode.length < 8 && !demo) log.warn('ORG_CODE court : 8 caractères ou plus conseillés.');
 });

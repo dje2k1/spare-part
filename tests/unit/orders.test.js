@@ -159,6 +159,9 @@ test('commande fournisseur : brouillon → envoi → réception partielle → so
   assert.deepEqual([r1.units, r1.complete, order(db, orderId).status], [60, false, 'partial']);
   assert.equal(stockOf(db, ORG.central, EAN.zip), 260);
   assert.equal(db.history[0].reason, 'Réception fournisseur');
+  // La réception fait partie de la commande : l'annuler comme une simple entrée désynchroniserait les quantités reçues
+  expectOpError(() => ops.undoMovement(db, lea, { historyId: db.history[0].id }), /fait partie d'une commande/);
+  assert.equal(stockOf(db, ORG.central, EAN.zip), 260, 'stock intact');
   assert.equal(incomingQty(db, ORG.central, EAN.zip), 40, 'reste à recevoir');
   expectOpError(() => o.receivePurchase(db, lea, { id: orderId, lines: [{ ean: EAN.zip, qty: 0 }] }), /au moins une quantité/);
   o.closePurchase(db, later(karim, 12), { id: orderId, reason: 'Fin de série' });

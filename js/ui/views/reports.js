@@ -1,6 +1,6 @@
 // Rapport périodique (hebdomadaire par défaut) : consommation, valeur, commandes (taux de service, délai,
 // écarts), ruptures ; détail par atelier pour l'entrepôt central. Imprimable et exportable.
-import { html, fmtInt, fmtEur, fmtDateTime } from '../../lib/text.js';
+import { html, fmtInt, fmtEur, fmtDateTime, localDay } from '../../lib/text.js';
 import { stringify } from '../../lib/csv.js';
 import { icon, actions, download } from '../dom.js';
 import { db, depot } from '../state.js';
@@ -53,7 +53,7 @@ export function initReports() {
     },
     'rp.csv'() {
       const r = weeklyReport(db(), depot().id, new Date(), { days: RP.days });
-      download(`rapport-${RP.days}j-${depot().code || 'depot'}-${new Date().toISOString().slice(0, 10)}.csv`, stringify(r.top, [
+      download(`rapport-${RP.days}j-${depot().code || 'depot'}-${localDay()}.csv`, stringify(r.top, [
         { label: 'EAN', get: (t) => t.ean }, { label: 'Pièce', get: (t) => t.name }, { label: 'Unités sorties', get: (t) => t.units }, { label: 'Valeur', get: (t) => String(Math.round(t.value * 100) / 100).replace('.', ',') },
       ]), 'text/csv');
     },

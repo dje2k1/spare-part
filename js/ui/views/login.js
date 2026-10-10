@@ -1,7 +1,7 @@
 // Accueil de l'application : première installation (démo / vide / restauration) puis connexion
 // en 3 temps — dépôt, profil, PIN — au lieu de saisir nom + dépôt + PIN au clavier.
-import { html } from '../../lib/text.js';
-import { $, setHtml, icon, actions, val } from '../dom.js';
+import { html, fold } from '../../lib/text.js';
+import { $, $$, setHtml, icon, actions, val } from '../dom.js';
 import { store, lockout, prefs, db, state } from '../state.js';
 import { verifyPin, pinPolicy, upgradeLegacyPins } from '../../core/auth.js';
 import { buildDemoDb, buildFreshDb } from '../../core/seed.js';
@@ -168,17 +168,23 @@ function usersFor(depotId) {
     .sort((a, b) => ['admin', 'manager', 'operator'].indexOf(a.role) - ['admin', 'manager', 'operator'].indexOf(b.role) || a.name.localeCompare(b.name, 'fr'));
 }
 
+const FILTER_FROM = 9; // au-delà de 8 profils, un champ filtre la liste (sites de plusieurs dizaines de personnes)
+
 function userStep() {
   const d = depotOf(L.depotId);
   const multi = source().depots.length > 1;
+  const people = usersFor(L.depotId);
+  const filter = people.length >= FILTER_FROM;
   return html`
     <div class="login__panel stack">
       ${L.message ? html`<p class="banner banner--info" role="status">${L.message}</p>` : ''}
       <h2 class="login__h">Qui êtes-vous ?</h2>
       <p class="muted">${d.name}</p>
-      <ul class="login__list">${usersFor(L.depotId).map((u, i) => html`<li><button type="button" class="login__choice" data-action="login.user" data-id="${u.id}" ${i === 0 ? 'data-autofocus' : ''}>
+      ${filter ? html`<label class="searchbar searchbar--flat">${icon('search')}<input class="input" type="search" placeholder="Votre nom" aria-label="Rechercher votre nom" autocomplete="off" autocapitalize="words" spellcheck="false" data-input="login.filter" data-autofocus></label>` : ''}
+      <ul class="login__list">${people.map((u, i) => html`<li data-user-item data-name="${fold(u.name)}"><button type="button" class="login__choice" data-action="login.user" data-id="${u.id}" ${i === 0 && !filter ? 'data-autofocus' : ''}>
         ${avatar(u.name)}
         <span class="login__choice-main"><strong>${u.name}</strong><span class="muted">${ROLES[u.role].label}</span></span>${icon('chevron')}</button></li>`)}</ul>
+      ${filter ? html`<p class="muted center" data-user-none hidden>Aucun profil ne correspond.</p>` : ''}
       ${multi ? html`<button type="button" class="btn btn--ghost btn--block" data-action="login.back">Changer de dépôt</button>` : ''}
       ${demoHint()}${serverFoot()}
     </div>`;
@@ -273,6 +279,16 @@ export function initLogin() {
   actions({
     'login.depot': (el) => { L.depotId = el.dataset.id; L.step = 'user'; L.message = ''; paint(); },
     'login.user': (el) => { L.userId = el.dataset.id; L.step = 'pin'; L.message = ''; paint(); },
+    'login.filter'(el) {
+      const words = fold(el.value).split(/\s+/).filter(Boolean);
+      let shown = 0;
+      for (const li of $$('#login [data-user-item]')) {
+        li.hidden = !words.every((w) => li.dataset.name.includes(w));
+        if (!li.hidden) shown++;
+      }
+      const none = $('#login [data-user-none]');
+      if (none) none.hidden = shown > 0;
+    },
     async 'login.org'(form) {
       const err = form.querySelector('[data-err]');
       const code = val(form, 'org');

@@ -3,7 +3,6 @@
 //   - saisie au clavier (code ou nom, avec suggestions) ;
 //   - caméra du téléphone dans une feuille, en lecture continue (bip à chaque code).
 import { html } from '../lib/text.js';
-import { isCode } from '../lib/ean.js';
 import { icon, $ } from './dom.js';
 import { openSheet, closeSheet } from './dialogs.js';
 import { createScanner, scannerAvailable, cameraErrorMessage } from './scanner.js';
@@ -15,32 +14,78 @@ import { touch } from './session.js';
 export function codeBar({ id, placeholder = 'Scanner ou saisir un code', submit, input = '', camera, label = placeholder }) {
   return html`<form class="codebar" data-submit="${submit}" role="search">
     <span class="codebar__icon" aria-hidden="true">${icon('scan')}</span>
-    <input class="input codebar__input" id="${id}" name="q" type="text" inputmode="search" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${placeholder}" aria-label="${label}" ${input ? html`data-input="${input}"` : ''}>
+    <input class="input codebar__input" id="${id}" name="q" type="text" inputmode="search" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${placeholder}" aria-label="${label}" data-scan-target ${input ? html`data-input="${input}"` : ''}>
     ${camera ? html`<button type="button" class="btn btn--primary btn--icon codebar__cam" data-action="${camera}" aria-label="Scanner avec la caméra">${icon('camera')}</button>` : ''}
   </form>`;
 }
 
+// Écart maximal entre deux caractères d'une douchette (les lecteurs envoient en 5 à 30 ms ; certains modèles
+// Bluetooth un peu plus). Hors champ ou dans un champ numérique (quantité), 80 ms : personne n'y tape 8 chiffres
+// d'affilée. Dans un champ de texte, seuil strict : 8 caractères à moins de 35 ms d'intervalle chacun, puis
+// Entrée, ne sont pas humains.
+const GAP_LOOSE = 80;
+const GAP_TEXT = 35;
+const isField = (el) => Boolean(el) && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+const isNumeric = (el) => el.type === 'number' || el.inputMode === 'numeric' || el.inputMode === 'decimal';
+const gapFor = (el) => (!isField(el) || isNumeric(el) ? GAP_LOOSE : GAP_TEXT);
+
 /**
- * Douchette : écoute globale tant que l'écran est affiché. Un lecteur envoie ses caractères en rafale
- * (< 80 ms d'écart) puis Entrée ; une saisie humaine dans un champ n'est pas interceptée.
+ * Douchette (lecteur Bluetooth/USB en mode clavier) : écoute globale tant que l'écran est affiché. Le lecteur
+ * envoie ses caractères en rafale puis Entrée.
+ *   - focus hors champ : le code est intercepté ;
+ *   - focus dans un champ de code (`data-scan-target`, barre de saisie) : rien n'est intercepté, le formulaire
+ *     reçoit le code et l'Entrée ;
+ *   - focus dans un autre champ de l'écran (quantité…) : la rafale y a été tapée par erreur — le champ retrouve
+ *     sa valeur d'avant la rafale et le code est traité comme un scan (plus de quantité « 3700089690011 »).
+ * Une fenêtre (confirmation, PIN) ou le menu ouverts ne sont jamais interceptés, ni la saisie dans le formulaire
+ * d'une fiche ; une fiche simplement consultée n'empêche pas de scanner.
  * @returns {() => void} pour arrêter l'écoute
  */
 export function listenWedge(onCode) {
   let buf = '';
   let at = 0;
+  let field = null; // champ qui avait le focus au début de la rafale, et sa valeur d'alors
+  let before = '';
   const handler = (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    // Un champ a le focus : la douchette y tape et Entrée valide le formulaire (géré par l'écran).
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
     if (document.querySelector('#modal[open], #drawer[open]')) return;
-    const now = performance.now();
-    if (now - at > 80) buf = '';
-    at = now;
-    if (/^[0-9A-Za-z:-]$/.test(e.key)) buf += e.key;
-    else if (e.key === 'Enter' && buf.length >= 8) { const t = buf; buf = ''; e.preventDefault(); touch(); onCode(t); }
+    const el = document.activeElement;
+    const inField = isField(el);
+    // Champ de code, ou formulaire d'une fiche (hors de l'écran principal) : on n'intercepte rien
+    if (inField && (el.closest('[data-scan-target]') || !el.closest('#view'))) return;
+    // Heure de l'ÉVÉNEMENT (et non du traitement) : si la page est occupée pendant une rafale, les touches attendent
+    // puis arrivent groupées — l'écart réel envoyé par le lecteur reste mesuré correctement.
+    const now = e.timeStamp || performance.now();
+    const gap = gapFor(el);
+    if (/^[0-9A-Za-z:-]$/.test(e.key)) {
+      if (now - at > gap || field !== (inField ? el : null)) {
+        buf = '';
+        field = inField ? el : null;
+        before = inField ? el.value : '';
+      }
+      at = now;
+      buf += e.key;
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    const fast = now - at <= gap * 2;
+    if (buf.length >= 8 && fast && field === (inField ? el : null)) {
+      const code = buf;
+      buf = '';
+      e.preventDefault();
+      e.stopPropagation();
+      if (field) {
+        field.value = before;
+        field.dispatchEvent(new Event('input', { bubbles: true })); // l'écran se recale sur la valeur restaurée
+      }
+      field = null;
+      touch();
+      onCode(code);
+    }
+    buf = '';
   };
-  document.addEventListener('keydown', handler);
-  return () => document.removeEventListener('keydown', handler);
+  document.addEventListener('keydown', handler, true);
+  return () => document.removeEventListener('keydown', handler, true);
 }
 
 let cam = null;
@@ -90,8 +135,3 @@ export function openCamera({ title = 'Scanner', hint = 'Visez le code-barres de 
   });
 }
 
-/** Normalise une saisie : code (8-14 chiffres) ou texte libre. */
-export const readCode = (text) => {
-  const t = String(text ?? '').trim();
-  return isCode(t) ? { code: t } : { text: t };
-};

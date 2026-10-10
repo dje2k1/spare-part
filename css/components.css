@@ -73,7 +73,7 @@
 .qty__input { flex: 1; width: 0; min-width: 0; height: 3.75rem; border: 0; text-align: center; background: transparent; font-family: var(--serif); font-size: var(--fs-2xl); font-variant-numeric: lining-nums tabular-nums; -moz-appearance: textfield; }
 .qty__input::-webkit-outer-spin-button, .qty__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .qty__input:focus-visible { outline: 2px solid var(--f-text); outline-offset: -2px; }
-.presets { display: flex; gap: var(--s2); margin-top: var(--s2); }
+.presets { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); }
 .presets .chip { flex: 1; justify-content: center; }
 
 /* ── Puces, pastilles, étiquettes ── */
