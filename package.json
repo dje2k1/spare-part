@@ -1,0 +1,20 @@
+{
+  "name": "mode-stock",
+  "version": "2.0.0",
+  "description": "MODE Stock — gestion de stock de pièces détachées (PWA statique, 100 % côté client)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test tests/unit/",
+    "test:e2e": "playwright test",
+    "serve": "node tests/serve.js",
+    "vendor": "node scripts/vendor.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "axe-core": "^4.10.0",
+    "html5-qrcode": "2.3.8",
+    "qrcode-generator": "1.4.4"
+  }
+}
