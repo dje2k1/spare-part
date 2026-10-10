@@ -48,7 +48,7 @@ body.no-tabbar .tabbar { display: none; }
 .pad { padding: var(--s4); }
 .pad .list, .pad--x .list, .scan .list, .stack .list, .labels__panel .list, .sheet-sec.list { margin-left: 0; margin-right: 0; }
 .sticky-tools { position: sticky; top: calc(var(--topbar-h) + var(--safe-t)); z-index: 20; margin-bottom: var(--s3); padding-bottom: var(--s1); background: color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-.searchbar { position: relative; padding: var(--s3) var(--s4) 0; }
+.searchbar { display: block; position: relative; padding: var(--s3) var(--s4) 0; }
 .searchbar .i { position: absolute; left: calc(var(--s4) + 0.95rem); top: calc(var(--s3) + 0.95rem); color: var(--f-text); pointer-events: none; }
 .searchbar .input { padding-left: 2.85rem; border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--shadow-sm); }
 

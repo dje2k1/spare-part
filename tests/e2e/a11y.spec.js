@@ -56,6 +56,37 @@ for (const scheme of ['light', 'dark']) {
       await audit(page, 'réception fournisseur');
     });
 
+    test('parcours magasinier : sortie au-delà du stock, historique de session, comptage d\'inventaire', async ({ page }) => {
+      await loginDemo(page, { name: 'Sophie Martin', pin: '2345', depot: 'Paris' });
+      await go(page, '#/scan/out');
+      await page.locator('#scan-q').fill('bandouliere');
+      await page.locator('#scan-suggest .row').first().click();
+      await page.locator('[name=qty]').fill('9999');
+      await expect(page.locator('#scan-over')).toBeVisible();
+      await audit(page, 'sortie au-delà du stock');
+      await page.locator('[name=qty]').fill('1');
+      await page.locator('.scan-card__go').click();
+      await expect(page.locator('.recap')).toBeVisible();
+      await audit(page, 'récapitulatif de session');
+      await page.locator('.recap').getByRole('button', { name: 'Voir', exact: true }).click();
+      await audit(page, 'historique de session');
+      await page.locator('#sheet [data-action="sheet.close"]').first().click();
+      await go(page, '#/inventory');
+      await page.getByRole('button', { name: 'Démarrer l\'inventaire' }).click();
+      await audit(page, 'comptage d\'inventaire');
+    });
+
+    test('connexion d\'un grand site : filtre des profils', async ({ page }) => {
+      await seedDemo(page, (d) => {
+        const paris = Object.values(d.depots).find((x) => x.name.includes('Paris'));
+        for (let i = 0; i < 8; i++) { const id = `usera11y${String(i).padStart(4, '0')}`; d.users[id] = { id, name: `Personne ${i}`, role: 'operator', depotId: paris.id, pin: null }; }
+      });
+      await page.goto('./');
+      await page.locator('[data-action="login.depot"]', { hasText: 'Paris' }).click();
+      await page.getByRole('searchbox', { name: 'Rechercher votre nom' }).fill('zzz');
+      await audit(page, 'filtre des profils');
+    });
+
     test('feuille article, menu et dialogues', async ({ page }) => {
       await loginDemo(page);
       await go(page, '#/articles');

@@ -65,7 +65,11 @@ production* efface la démo **sur le serveur** et repart d'un entrepôt central 
 * **Connexion hors ligne** : possible pour un compte qui s'est déjà connecté en ligne sur cet appareil au cours des 30 derniers
   jours. La toute première connexion d'un appareil exige le réseau.
 * **Sessions** : 12 h sans activité (réglable, `SESSION_HOURS`). Un compte supprimé, ou dont le PIN est changé par un
-  administrateur, est déconnecté de tous ses appareils.
+  administrateur, est déconnecté de tous ses appareils. Les sessions expirées (appareils perdus) sont purgées chaque heure.
+* **Archivage** : les commandes soldées et les transferts terminés depuis plus de 400 jours (`ARCHIVE_DAYS`, 0 = jamais)
+  quittent la base envoyée aux appareils et rejoignent `archive-orders.jsonl` / `archive-transfers.jsonl` sur le serveur.
+  Les rapports, seuils et délais mesurés n'utilisent que des données plus récentes.
+* **Poids** : l'application est servie compressée (Brotli ou gzip) par le serveur lui-même ; rien à configurer dans Caddy.
 * **Changer le code d'accès** (fuite, départ) : modifier `ORG_CODE` puis `docker compose up -d`. Chaque appareil devra
   ressaisir le nouveau code à sa prochaine connexion.
 
@@ -84,11 +88,17 @@ Le profil d'imprimante est réglé **par appareil** (*Menu → Imprimante*) :
 ## 6. Sauvegardes
 
 Les données sont dans le volume Docker `mode-data` : `snapshot.json` (instantané), `events.jsonl` (journal des opérations
-depuis l'instantané, écrit et synchronisé sur disque avant chaque réponse), `sessions.json`, `archive-history.jsonl`
-(historique au-delà de 200 000 mouvements).
+depuis l'instantané, écrit et synchronisé sur disque avant chaque réponse), `sessions.json`, `backups/` (sauvegardes
+quotidiennes), `archive-history.jsonl` (historique au-delà de 200 000 mouvements), `archive-orders.jsonl` et
+`archive-transfers.jsonl` (documents archivés).
 
-* **Sauvegarde applicative** (recommandée, quotidienne) : Administration → Données → *Télécharger la sauvegarde du serveur*.
-  Le fichier contient les empreintes de PIN : à conserver comme un secret, hors du serveur.
+* **Sauvegardes automatiques** : chaque jour (et au démarrage s'il manque celle du jour), une sauvegarde complète est
+  écrite dans `backups/mode-stock-AAAA-MM-JJ.json` ; les 14 derniers jours sont conservés (`BACKUP_KEEP`, 0 = désactivées).
+  Elles sont listées et téléchargeables dans Administration → Données : pour revenir à un jour donné (erreur de saisie en
+  masse, mauvaise restauration…), téléchargez-le puis *Restaurer une sauvegarde sur le serveur*. Elles restent sur le
+  serveur : elles ne remplacent pas une copie **hors** du serveur.
+* **Sauvegarde applicative hors du serveur** (recommandée, hebdomadaire au moins) : Administration → Données →
+  *Télécharger la sauvegarde du serveur*. Le fichier contient les empreintes de PIN : à conserver comme un secret.
 * **Sauvegarde du volume** (ex. tâche cron nocturne) :
   ```bash
   docker run --rm -v spare-part_mode-data:/data -v "$PWD/backups":/b alpine \

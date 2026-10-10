@@ -1,5 +1,5 @@
 // Fragments d'interface partagés entre les vues. Tout passe par html`` (auto-échappement).
-import { html, fmtInt, fmtRelative, fmtDateTime, initials } from '../lib/text.js';
+import { html, fmtInt, fmtRelative, initials } from '../lib/text.js';
 import { isImageDataUrl } from '../lib/image.js';
 import { icon } from './dom.js';
 import { hueClass, sectionIcon } from './look.js';
@@ -96,4 +96,3 @@ export function chips({ action, value, items, label }) {
     <button type="button" class="chip" data-action="${action}" data-value="${it.value}" aria-pressed="${String(it.value === value)}">${it.label}${it.count !== undefined ? html`<span class="chip__count">${it.count}</span>` : ''}</button>`)}</div>`;
 }
 
-export const dateTime = fmtDateTime;

@@ -164,7 +164,7 @@ export function initArticleSheet() {
     async 'art.photo'(input) {
       const f = input.files?.[0];
       if (!f) return;
-      try { SH.photo = (await shrink(f, { max: 480, quality: 0.72 })).dataUrl; } catch { toast('Image illisible.', { tone: 'error' }); return; }
+      try { SH.photo = (await shrink(f, { max: 400, quality: 0.7 })).dataUrl; } catch { toast('Image illisible.', { tone: 'error' }); return; }
       keepForm();
     },
     'art.photo.remove': () => { SH.photo = ''; keepForm(); },

@@ -14,13 +14,15 @@
 //   POST /api/ai/analyze          analyse photo (clé API côté serveur)
 //   GET  /api/admin/backup        sauvegarde complète (administrateur)
 //   POST /api/admin/restore       restauration (administrateur)
+//   GET  /api/admin/backups       sauvegardes automatiques quotidiennes (liste) · /api/admin/backups/file?name=… (fichier)
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, resolve, sep } from 'node:path';
+import { extname, resolve, sep, join } from 'node:path';
 import { gzipSync, brotliCompressSync, constants as zlib } from 'node:zlib';
 import { createSyncStore } from './sync-store.js';
 import { createAuth } from './auth.js';
 import { createAiProxy } from './ai.js';
+import { createBackups } from './backups.js';
 import { makeBackup, parseBackup } from '../js/core/schema.js';
 import { can } from '../js/core/auth.js';
 import { APP_VERSION } from '../js/core/config.js';
@@ -53,8 +55,10 @@ class HttpError extends Error {
  * @param {() => Promise<object>} [o.bootstrap]  base initiale si aucune donnée (démo ou installation vide)
  * @param {{apiKey?:string, baseURL?:string, dailyLimit?:number}} [o.ai]
  * @param {boolean} [o.trustProxy]      derrière un proxy inverse (X-Forwarded-For / -Proto / -Host)
+ * @param {number} [o.backupKeep]       sauvegardes automatiques quotidiennes conservées (0 = désactivées)
+ * @param {number} [o.archiveDays]      commandes et transferts terminés depuis plus de N jours archivés (0 = jamais)
  */
-export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {}, trustProxy = false, sessionHours = 12, now = () => new Date(), log = console, storeOptions = {} }) {
+export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {}, trustProxy = false, sessionHours = 12, backupKeep = 14, archiveDays = 400, now = () => new Date(), log = console, storeOptions = {} }) {
   if (!orgCode || String(orgCode).trim().length < 4) throw new Error('ORG_CODE manquant ou trop court (4 caractères minimum).');
   const root = resolve(staticDir);
   const store = createSyncStore({ dataDir, now, log, historyMax: SERVER_LOGS.history, auditMax: SERVER_LOGS.audit, ...storeOptions });
@@ -65,6 +69,19 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
   }
   const auth = createAuth({ store, dataDir, orgCode, sessionHours, now: () => now().getTime(), log });
   const aiProxy = createAiProxy({ ...ai, now, log });
+  const backups = backupKeep > 0 ? createBackups({ dir: join(dataDir, 'backups'), keep: backupKeep, now, log, text: () => makeBackup(store.db, now()) }) : null;
+  backups?.start();
+  // Maintenance quotidienne (au démarrage puis au changement de jour) : archivage des commandes et transferts anciens
+  let maintainedOn = '';
+  const maintain = () => {
+    const today = now().toDateString();
+    if (!archiveDays || today === maintainedOn) return;
+    maintainedOn = today;
+    try { store.archiveOld({ days: archiveDays }); } catch (e) { log.error?.('archivage impossible', e); }
+  };
+  maintain();
+  const maintenance = setInterval(maintain, 3_600_000);
+  maintenance.unref?.();
   const streams = new Set();
   let snapCache = null; // instantané sérialisé et compressé, réutilisé tant que la version ne change pas
 
@@ -251,6 +268,21 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
       res.end(data);
     },
 
+    'GET /api/admin/backups'(req, res) {
+      session(req, 'data.manage');
+      send(req, res, 200, { keep: backups?.keep ?? 0, items: backups?.list() ?? [] });
+    },
+
+    'GET /api/admin/backups/file'(req, res, url) {
+      const s = session(req, 'data.manage');
+      const name = url.searchParams.get('name');
+      const data = backups?.read(name);
+      if (!data) throw new HttpError(404, 'Sauvegarde introuvable.');
+      log.info?.(`sauvegarde automatique ${name} téléchargée par ${s.user.name}`);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': data.length, 'Content-Disposition': `attachment; filename="${name}"` });
+      res.end(req.method === 'HEAD' ? undefined : data);
+    },
+
     async 'POST /api/admin/restore'(req, res) {
       const s = session(req, 'data.manage');
       const { text } = await readJson(req, LIMITS.restore);
@@ -349,9 +381,11 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
   server.keepAliveTimeout = 30_000;
 
   return {
-    server, store, auth, ai: aiProxy,
+    server, store, auth, ai: aiProxy, backups,
     /** Arrêt propre : flux fermés, journal et instantané écrits. */
     async close() {
+      backups?.stop();
+      clearInterval(maintenance);
       for (const s of [...streams]) s.stop();
       await new Promise((r) => { server.close(() => r()); server.closeAllConnections?.(); });
       auth.close();

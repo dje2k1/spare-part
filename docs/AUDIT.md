@@ -80,3 +80,63 @@ et le viewport de scan agrandi (75 vh, sticky). La clé déjà enregistrée sous
 2. **Proxy serveur pour l'IA** : ne plus exposer de clé API dans le navigateur.
 3. **Lots / dates de péremption**, **fournisseurs et bons de commande**, **imprimantes d'étiquettes** (ZPL/Bluetooth), **notifications** d'alerte (nécessite un serveur de push).
 4. **Photos dans IndexedDB** si le catalogue dépasse quelques centaines d'articles illustrés.
+
+## Passe 4 — version 3.1
+
+Relecture complète du code (métier, interface, serveur, service worker, styles), exécution de l'application en clair et en
+sombre, et **mesures** sur une base réaliste générée pour l'occasion (5 000 pièces, 2 450 emplacements, 1 600 commandes).
+✅ corrigé · ⚠️ limite connue.
+
+### Performance (mesurée)
+
+| Calcul (5 000 pièces, 1 600 commandes) | Avant | Après |
+|---|---:|---:|
+| « Votre journée » d'un atelier (accueil) | 7 040 ms | 97 ms |
+| Réassort d'un atelier | 2 770 ms | 22 ms |
+| Seuils intelligents | 2 950 ms | 61 ms |
+| Prévision de rupture | 2 450 ms | 41 ms |
+| Liste complète des articles | 342 ms | 38 ms |
+| Plan des emplacements | 120 ms | 10 ms |
+
+Causes : chaque pièce relisait toutes les commandes (quantités en route), le délai mesuré était recalculé pour chaque pièce,
+le tri « naturel » recréait un comparateur à chaque comparaison. ✅ index construits une fois par calcul, `Intl.Collator`
+partagé, texte de recherche replié mis en cache. Sur un téléphone, l'accueil aurait demandé 20 à 40 s à chaque saisie.
+Un test de montée en charge (`tests/unit/scale.test.js`) échoue si ces parcours reviennent.
+
+### Justesse et sécurité des données
+
+| # | Constat | Statut |
+|---|---|---|
+| P1 | Le nom du cache hors ligne ne changeait qu'avec `APP_VERSION` : la refonte graphique a été livrée à version égale, le cache était réécrit en place et un appareil pouvait servir un mélange d'anciens et de nouveaux fichiers (et le garder si une installation échouait à mi-chemin) | ✅ empreinte du contenu dans la version du cache, vérifiée par les tests |
+| P2 | Une réception de commande fournisseur (entrée liée à un document) pouvait être annulée comme une simple entrée : stock et quantités reçues désynchronisés | ✅ refusée par la couche métier (donc aussi par le serveur) |
+| P3 | Indicateurs « Entrées / Sorties » : seules les entrées et sorties manuelles comptaient — un atelier, approvisionné par l'entrepôt, affichait « +0 », l'entrepôt ne voyait pas ses expéditions | ✅ livraisons reçues et expéditions comptées, annulations et transferts annulés exclus |
+| P4 | Un code UPC-A lu sur 12 chiffres ne retrouvait pas la pièce enregistrée en EAN-13 (« 0 » + UPC-A) : « code inconnu », puis doublon créé | ✅ écritures équivalentes (UPC-A, EAN-13, GTIN-14) reconnues sur tous les écrans de scan |
+| P5 | Compteur « Alertes » de la liste des articles ≠ liste filtrée (pièces non suivies à zéro comptées) ; « Stock sain » calculé différemment sur l'accueil et le tableau de bord, où il s'appelait « taux de service » comme un autre indicateur du rapport | ✅ mêmes définitions partout, libellé corrigé |
+| P6 | « Votre journée » une fois par jour… en jour UTC (entre minuit et 2 h, encore la veille en France) ; noms de fichiers datés en UTC | ✅ jour local |
+| P7 | Pièces manquantes à l'entrepôt évaluées commande par commande (deux commandes de 5 face à un stock de 8 : rien signalé) | ✅ demande cumulée |
+| P8 | Serveur : un cookie mal encodé posé par une autre application du domaine faisait échouer toutes les requêtes (erreur 500) | ✅ cookie illisible ignoré |
+| P9 | Texte du réassort périmé (« objectif : 2 × le seuil ») depuis les seuils par dépôt | ✅ |
+
+### Ergonomie magasinier
+
+| # | Constat | Statut |
+|---|---|---|
+| E1 | Douchette en mode clavier : si un champ quantité avait le focus, le code s'y inscrivait (« 3700089690011 » pièces) | ✅ rafale reconnue même dans un champ : valeur restaurée, code traité comme un scan |
+| E2 | Une saisie erronée n'était annulable que pendant les 8 s du message | ✅ historique de la session de scan, annulation pendant 15 min (transfert : tant qu'il n'est pas reçu) |
+| E3 | Sortie au-delà du stock découverte au moment de valider | ✅ stock rappelé, « Tout (N) », dépassement signalé et validation bloquée |
+| E4 | Inventaire guidé sans scan | ✅ comptage au scan (douchette ou caméra), saut vers la pièce scannée |
+| E5 | Connexion d'un site de plusieurs dizaines de personnes : longue liste à faire défiler | ✅ filtre au-delà de 8 profils |
+| E6 | Commande fournisseur : douchette sans effet, recherche sans résultat muette | ✅ |
+| E7 | Export du catalogue incomplet (conditionnement, fournisseur, réf. fournisseur), donc non réimportable | ✅ l'export complet se réimporte |
+| E8 | Préparation : « rupture partielle » affichée pour une rupture totale ; bouton « Expédier » grisé sans explication | ✅ |
+
+### Serveur, accessibilité, code
+
+* ✅ Fichiers de l'application compressés (Brotli, sinon gzip) et gardés en mémoire.
+* ✅ Sauvegarde complète quotidienne sur le serveur (14 jours), listée et téléchargeable par l'administrateur.
+* ✅ Archivage des commandes et transferts terminés depuis plus de 13 mois (la base envoyée aux appareils reste légère).
+* ✅ Purge horaire des sessions expirées.
+* ✅ Changement d'écran annoncé aux lecteurs d'écran ; nouveaux écrans audités par axe-core (clair et sombre).
+* ✅ Six fonctions exportées jamais utilisées supprimées ; deux tests dépendants de l'heure de la démonstration stabilisés.
+* ⚠️ Non vérifié sur matériel réel : douchettes Bluetooth (seuil de rafale choisi pour 5 à 80 ms entre caractères),
+  imprimantes thermiques, rendu sur iPhone et Android.

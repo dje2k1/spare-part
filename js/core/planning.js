@@ -1,7 +1,7 @@
 // Planification (lecture seule) : seuils intelligents, prévisions de rupture, commandes, briefing du jour,
 // rapport hebdomadaire. Fonctions pures (db, paramètres, now) → données.
 import { stockOf, levelOf, incomingIndex, reorderList, articleLocations, isLow } from './queries.js';
-import { weekOf, centralDepot } from './ops-kit.js';
+import { weekOf } from './ops-kit.js';
 import { matches, natCompare as nat } from '../lib/text.js';
 
 const DAY = 86_400_000;
@@ -293,5 +293,3 @@ export function weeklyReport(db, depotId, now = new Date(), { days: span = 7 } =
   };
 }
 
-/** Atelier sans entrepôt central défini ? (l'écran Commandes l'explique au lieu d'échouer) */
-export const hasCentral = (db) => Boolean(centralDepot(db));

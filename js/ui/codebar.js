@@ -3,7 +3,6 @@
 //   - saisie au clavier (code ou nom, avec suggestions) ;
 //   - caméra du téléphone dans une feuille, en lecture continue (bip à chaque code).
 import { html } from '../lib/text.js';
-import { isCode } from '../lib/ean.js';
 import { icon, $ } from './dom.js';
 import { openSheet, closeSheet } from './dialogs.js';
 import { createScanner, scannerAvailable, cameraErrorMessage } from './scanner.js';
@@ -54,7 +53,9 @@ export function listenWedge(onCode) {
     const inField = isField(el);
     // Champ de code, ou formulaire d'une fiche (hors de l'écran principal) : on n'intercepte rien
     if (inField && (el.closest('[data-scan-target]') || !el.closest('#view'))) return;
-    const now = performance.now();
+    // Heure de l'ÉVÉNEMENT (et non du traitement) : si la page est occupée pendant une rafale, les touches attendent
+    // puis arrivent groupées — l'écart réel envoyé par le lecteur reste mesuré correctement.
+    const now = e.timeStamp || performance.now();
     const gap = gapFor(el);
     if (/^[0-9A-Za-z:-]$/.test(e.key)) {
       if (now - at > gap || field !== (inField ? el : null)) {
@@ -134,8 +135,3 @@ export function openCamera({ title = 'Scanner', hint = 'Visez le code-barres de 
   });
 }
 
-/** Normalise une saisie : code (8-14 chiffres) ou texte libre. */
-export const readCode = (text) => {
-  const t = String(text ?? '').trim();
-  return isCode(t) ? { code: t } : { text: t };
-};

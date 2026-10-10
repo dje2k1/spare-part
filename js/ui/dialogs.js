@@ -106,18 +106,6 @@ export function confirmDialog({ title, message = '', confirmLabel = 'Confirmer',
   });
 }
 
-/** Information simple (une seule action). */
-export function alertDialog({ title, message, okLabel = 'Compris' }) {
-  return new Promise((resolve) => {
-    const dlg = showModal(html`
-      <h2 class="modal__title" id="modal-title">${title}</h2>
-      <p class="modal__text">${message}</p>
-      <div class="modal__actions"><button type="button" class="btn btn--primary" data-r="ok">${okLabel}</button></div>`);
-    dlg.querySelector('[data-r="ok"]').addEventListener('click', () => dlg.close());
-    dlg.addEventListener('close', () => resolve(), { once: true });
-  });
-}
-
 /**
  * Saisie de PIN. `verify(pin)` renvoie une valeur truthy (succès, retournée par la promesse),
  * `{error:'…'}` ou falsy (échec). Résout null si annulé.

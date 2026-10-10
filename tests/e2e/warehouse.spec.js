@@ -1,6 +1,6 @@
 // Ergonomie magasinier (passe 4) : douchette dans un champ, comptage d'inventaire au scan, historique de la
 // session de scan avec annulation, garde-fou de stock, codes UPC-A/EAN-13 équivalents, connexion d'un grand site.
-import { test, expect, loginDemo, seedDemo, db, go, toastText, stockedArticle } from './helpers.js';
+import { test, expect, loginDemo, seedDemo, db, go, toastText, stockedArticle, wedge } from './helpers.js';
 
 const SOPHIE = { name: 'Sophie Martin', pin: '2345', depot: 'Paris' };
 const parisOf = (d) => Object.values(d.depots).find((x) => x.name.includes('Paris'));
@@ -17,8 +17,7 @@ test('douchette pendant qu\'un champ quantité a le focus : le champ est restaur
   const qtyA = page.locator(`#line-${a.ean} .mini-qty__input`);
   await expect(qtyA).toHaveValue(String(a.shipped));
   await qtyA.click();
-  await page.keyboard.type(b.ean); // rafale (< 30 ms d'écart) tapée par erreur dans la quantité de A
-  await page.keyboard.press('Enter');
+  await wedge(page, b.ean); // rafale tapée par erreur dans la quantité de A
   await expect(page.locator(`#line-${b.ean}`)).toHaveClass(/is-checked/);
   await expect(page.locator(`#line-${a.ean} .mini-qty__input`)).toHaveValue(String(a.shipped));
   await expect(page.locator(`#line-${a.ean}`)).not.toHaveClass(/is-checked/);
@@ -37,20 +36,18 @@ test('inventaire : chaque lecture de la pièce affichée ajoute 1 ; une autre pi
   const eanNamed = (n) => Object.values(d.articles).find((x) => x.name === n).ean;
   const first = await nameOf();
   await expect(page.locator('#inv-qty')).toBeFocused();
-  for (let i = 0; i < 2; i++) { await page.keyboard.type(eanNamed(first)); await page.keyboard.press('Enter'); }
+  for (let i = 0; i < 2; i++) await wedge(page, eanNamed(first));
   await expect(page.locator('#inv-qty')).toHaveValue('2');
   // Une pièce plus loin dans la tournée : elle s'affiche et compte 1
   await page.getByRole('button', { name: 'Suivant' }).click();
   await page.getByRole('button', { name: 'Suivant' }).click();
   const third = await nameOf();
   await page.getByRole('button', { name: 'Précédent' }).click();
-  await page.keyboard.type(eanNamed(third));
-  await page.keyboard.press('Enter');
+  await wedge(page, eanNamed(third));
   await expect(page.locator('.scan-card__name')).toHaveText(third);
   await expect(page.locator('#inv-qty')).toHaveValue('1');
   // Code hors catalogue : refusé, rien ne change
-  await page.keyboard.type('96385074');
-  await page.keyboard.press('Enter');
+  await wedge(page, '96385074');
   await expect(toastText(page)).toContainText('inconnu');
   await expect(page.locator('#inv-qty')).toHaveValue('1');
 });

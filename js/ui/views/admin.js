@@ -1,7 +1,7 @@
 // Administration : utilisateurs, dépôts, emplacements, import/export, données (sauvegarde, stockage, verrouillage, production).
-import { html, fmtInt, fmtDateTime, plural, localDay } from '../../lib/text.js';
+import { html, fmtInt, fmtDate, fmtDateTime, plural, localDay } from '../../lib/text.js';
 import { parse as parseCsv, stringify } from '../../lib/csv.js';
-import { icon, actions, $, val, download } from '../dom.js';
+import { icon, actions, $, setHtml, val, download } from '../dom.js';
 import { db, depot, can, run, preview, store, state, storage } from '../state.js';
 import { saveUser, deleteUser, saveDepot, deleteDepot, saveLocation, deleteLocation, updateSettings } from '../../core/ops.js';
 import { importCatalogueOp } from '../../core/registry.js';
@@ -15,7 +15,7 @@ import { printLabels, printStockReport } from '../print.js';
 import { endSession } from '../session.js';
 import { refresh } from '../router.js';
 import { toast } from '../toast.js';
-import { downloadServerBackup, restoreOnServer, serverConfig } from '../sync-ui.js';
+import { downloadServerBackup, restoreOnServer, serverConfig, listServerBackups, serverBackupUrl } from '../sync-ui.js';
 import { makeBackup } from '../../core/schema.js';
 
 const SECTIONS = [
@@ -45,7 +45,7 @@ function render(r) {
 export const adminRoute = {
   title: (r) => allowed().find((s) => s.key === r.params.get('s'))?.title ?? 'Administration',
   back: true, perm: 'import', render,
-  mount: (root, r) => { if (r.params.get('s') === 'data') paintStorage(); },
+  mount: (root, r) => { if (r.params.get('s') === 'data') { paintStorage(); if (state.serverMode) paintBackups(); } },
 };
 
 // ── Utilisateurs ──
@@ -162,7 +162,9 @@ function backupCard() {
       <p class="muted">Les données de tous les dépôts sont enregistrées sur le serveur de l'entreprise (journal et instantanés sur disque). Téléchargez régulièrement une sauvegarde complète et conservez-la hors du serveur.</p>
       <button type="button" class="btn btn--primary btn--block" data-action="adm.backup">${icon('download')}Télécharger la sauvegarde du serveur</button>
       <label class="btn btn--secondary btn--block" for="restore-file">${icon('upload')}Restaurer une sauvegarde sur le serveur…</label>
-      <input type="file" id="restore-file" class="sr-only" accept="application/json,.json" data-change="adm.restore"></section>`;
+      <input type="file" id="restore-file" class="sr-only" accept="application/json,.json" data-change="adm.restore">
+      <h4 class="eyebrow">Sauvegardes automatiques (une par jour)</h4>
+      <div id="auto-backups"><p class="muted">Chargement…</p></div></section>`;
   }
   const m = db().meta;
   const age = daysSince(m.lastBackupAt);
@@ -216,6 +218,21 @@ async function paintStorage() {
   } catch { /* estimation indisponible */ }
   if (storage.volatile) text += ' ⚠ Navigation privée : les données seront perdues à la fermeture.';
   el.textContent = text;
+}
+
+/** Sauvegardes quotidiennes conservées sur le serveur : téléchargeables, puis restaurables ci-dessus si besoin. */
+async function paintBackups() {
+  const host = $('#auto-backups');
+  if (!host) return;
+  let list;
+  try { list = await listServerBackups(); } catch (e) { setHtml(host, html`<p class="muted">${e.message}</p>`); return; }
+  if (!$('#auto-backups')) return;
+  setHtml(host, list.keep
+    ? list.items.length
+      ? html`<p class="muted">Les ${list.keep} derniers jours sont conservés sur le serveur. Pour revenir en arrière : téléchargez le jour voulu, puis « Restaurer une sauvegarde ».</p>
+        <ul class="plain-list">${list.items.map((b) => html`<li><span>${fmtDate(new Date(`${b.day}T12:00:00`))} <span class="muted">· ${(b.size / 1048576).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Mo</span></span><a class="btn btn--text" href="${serverBackupUrl(b.name)}" download="${b.name}">${icon('download', 'i--sm')}Télécharger</a></li>`)}</ul>`
+      : html`<p class="muted">Aucune sauvegarde automatique pour l'instant.</p>`
+    : html`<p class="muted">Désactivées sur ce serveur (BACKUP_KEEP=0).</p>`);
 }
 
 const stamp = () => localDay();

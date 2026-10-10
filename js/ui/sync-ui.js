@@ -30,7 +30,6 @@ const known = () => {
   const now = Date.now();
   return Object.fromEntries(Object.entries(all).filter(([, k]) => k && now - (k.at || 0) < KNOWN_TTL));
 };
-export const isKnownUser = (id) => Boolean(known()[id]?.pin);
 
 // ── Démarrage ──
 /**
@@ -281,6 +280,14 @@ export function downloadServerBackup() {
   a.click();
   a.remove();
 }
+
+/** Sauvegardes automatiques quotidiennes du serveur (administrateur). @returns {Promise<{keep:number, items:{name,day,size,savedAt}[]}>} */
+export async function listServerBackups() {
+  const r = await apiFetch('admin/backups', { timeout: 15_000 });
+  if (r.status !== 200) throw new Error(r.json?.error || `Liste indisponible (${r.status}).`);
+  return r.json;
+}
+export const serverBackupUrl = (name) => apiUrl(`admin/backups/file?name=${encodeURIComponent(name)}`);
 
 /** Restauration côté serveur : tous les appareils rechargent les données. */
 export async function restoreOnServer(text) {

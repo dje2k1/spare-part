@@ -1,4 +1,4 @@
-import { test, expect, loginDemo, login, db, toastText, stockedArticle } from './helpers.js';
+import { test, expect, loginDemo, login, db, toastText, stockedArticle, wedge } from './helpers.js';
 import { KEYS } from '../../js/core/config.js';
 
 const stockOf = (data, depotName, ean) => {
@@ -138,9 +138,18 @@ test.describe('scan continu', () => {
     const ean = eanByName(await db(page), 'Zip YKK 30cm');
     await page.goto('./#/scan/in');
     await page.locator('body').click({ position: { x: 5, y: 300 } });
-    await page.keyboard.type(ean); // sans délai : une douchette envoie ses caractères à < 30 ms d'écart
-    await page.keyboard.press('Enter');
+    await wedge(page, ean); // rafale émulée sur l'horloge de la page (une douchette envoie ses caractères à < 30 ms d'écart)
     await expect(page.locator('.scan-card__name')).toHaveText(/Zip YKK 30cm/);
+  });
+
+  test('frappe humaine (lente) hors champ : jamais prise pour un scan', async ({ page }) => {
+    const ean = eanByName(await db(page), 'Zip YKK 30cm');
+    await page.goto('./#/scan/in');
+    await page.locator('body').click({ position: { x: 5, y: 300 } });
+    await page.keyboard.type(ean, { delay: 150 }); // ≥ 150 ms entre deux touches : un humain
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await expect(page.locator('.scan-card')).toHaveCount(0);
   });
 
   test('le mode choisi est conservé et change le titre', async ({ page }) => {
