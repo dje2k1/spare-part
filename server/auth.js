@@ -9,11 +9,17 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { verifyPin, createLockout, can } from '../js/core/auth.js';
+import { verifyPin, hashPin, pinPolicy, createLockout, can } from '../js/core/auth.js';
 import { own } from '../js/core/ops-kit.js';
 
 const COOKIE = 'mode_session';
 const sha = (s) => createHash('sha256').update(s).digest('hex');
+/** Vérifications de PIN simultanées au plus (PBKDF2 : ~0,1 s de calcul chacune) — le processeur reste disponible. */
+export const MAX_PIN_CHECKS = 8;
+/** Sessions ouvertes par compte au plus (téléphone, tablette, poste…) : au-delà, la plus ancienne est fermée. */
+export const MAX_SESSIONS_PER_USER = 20;
+/** Verrouillages de compte journalisés : le premier, puis tous les 10 échecs (pas d'inondation du journal). */
+const auditLockout = (failures) => failures === 5 || (failures > 5 && failures % 10 === 5);
 
 function memoryStorage() {
   const m = new Map();
@@ -68,6 +74,22 @@ export function createAuth({ store, dataDir, orgCode, sessionHours = 12, now = (
   // peut se connecter et se reconnecter librement ; un essai systématique de codes ou de PIN est freiné.
   const ipFails = createLimiter({ max: 30, windowMs: 10 * 60_000, now });
   let saveTimer = null;
+  let checking = 0; // calculs PBKDF2 en cours
+  /** Calcul PBKDF2 (vérification ou empreinte) sans dépasser MAX_PIN_CHECKS en parallèle. @returns null = serveur occupé */
+  async function pbkdf2(fn) {
+    if (checking >= MAX_PIN_CHECKS) return null;
+    checking++;
+    try { return await fn(); } finally { checking--; }
+  }
+  const checkPin = (record, pin) => pbkdf2(() => verifyPin(record, pin));
+  const busy = { ok: false, status: 503, error: 'Serveur occupé : réessayez dans un instant.' };
+  /** PIN erroné (connexion ou changement de PIN) : compte et adresse pénalisés ; verrouillage signalé au journal. */
+  function failed(user, ip) {
+    ipFails.hit(ip);
+    const r = lockout.fail(user.id);
+    if (r.failures >= 5) log.warn?.(`compte ${user.name} verrouillé après ${r.failures} PIN erronés (dernier essai depuis ${ip})`);
+    return { ok: false, status: 401, retryMs: r.remainingMs, ...(auditLockout(r.failures) && { lockout: { user, failures: r.failures } }) };
+  }
 
   if (existsSync(file)) {
     try {
@@ -117,7 +139,9 @@ export function createAuth({ store, dataDir, orgCode, sessionHours = 12, now = (
       };
     },
     /**
-     * @returns {Promise<{ok:true, token:string, user:object, depotId:string, pin:object} | {ok:false, status:number, error:string, retryMs?:number}>}
+     * L'empreinte du PIN ne quitte jamais le serveur : l'appareil fabrique son propre vérificateur (déverrouillage
+     * hors ligne) à partir du PIN saisi. `lockout` : compte qui vient d'être verrouillé (à journaliser).
+     * @returns {Promise<{ok:true, token:string, user:object, depotId:string} | {ok:false, status:number, error:string, retryMs?:number, lockout?:{user:object, failures:number}}>}
      */
     async login({ userId, pin, depotId, orgCode: code }, ip) {
       if (ipFails.blocked(ip)) return { ok: false, status: 429, error: 'Trop de tentatives depuis cette adresse : patientez quelques minutes.' };
@@ -126,17 +150,39 @@ export function createAuth({ store, dataDir, orgCode, sessionHours = 12, now = (
       if (!user || !user.pin) { ipFails.hit(ip); return { ok: false, status: 401, error: 'Compte inconnu.' }; }
       const st = lockout.status(user.id);
       if (st.locked) return { ok: false, status: 423, error: 'Compte verrouillé après plusieurs erreurs.', retryMs: st.remainingMs };
-      if (!(await verifyPin(user.pin, pin))) {
-        ipFails.hit(ip);
-        const r = lockout.fail(user.id);
-        return { ok: false, status: 401, error: 'PIN incorrect.', retryMs: r.remainingMs };
-      }
+      const good = await checkPin(user.pin, pin);
+      if (good === null) return busy;
+      if (!good) return { ...failed(user, ip), error: 'PIN incorrect.' };
       lockout.success(user.id);
       const token = randomBytes(32).toString('base64url');
       const d = can(user.role, 'depot.any') && own(store.db.depots, depotId) ? depotId : user.depotId;
       sessions.set(sha(token), { userId: user.id, depotId: d, exp: now() + sessionHours * 3_600_000 });
+      // Connexions en boucle : la mémoire et sessions.json restent bornés (la session la moins récemment utilisée part)
+      const mine = [...sessions].filter(([, x]) => x.userId === user.id).sort((a, b) => a[1].exp - b[1].exp);
+      for (const [k] of mine.slice(0, Math.max(0, mine.length - MAX_SESSIONS_PER_USER))) sessions.delete(k);
       persist();
-      return { ok: true, token, user: { id: user.id, name: user.name, role: user.role, depotId: user.depotId }, depotId: d, pin: user.pin };
+      return { ok: true, token, user: { id: user.id, name: user.name, role: user.role, depotId: user.depotId }, depotId: d };
+    },
+    /**
+     * Changement de son propre PIN : le PIN actuel est vérifié PAR LE SERVEUR (une session volée ou un appareil
+     * modifié ne suffit pas), la politique est appliquée au nouveau PIN en clair, l'empreinte est calculée ici.
+     * Les erreurs comptent comme à la connexion (même verrouillage du compte, même limite par adresse).
+     * @returns {Promise<{ok:true, record:object} | {ok:false, status:number, error:string, retryMs?:number, lockout?:{user:object, failures:number}}>}
+     */
+    async changePin(s, { current, next } = {}, ip) {
+      const user = own(store.db.users, s.user.id);
+      if (!user?.pin) return { ok: false, status: 404, error: 'Compte introuvable.' };
+      const policy = pinPolicy(next, { role: user.role }); // règle publique : vérifiée avant tout calcul
+      if (!policy.ok) return { ok: false, status: 400, error: policy.reason };
+      if (ipFails.blocked(ip)) return { ok: false, status: 429, error: 'Trop de tentatives depuis cette adresse : patientez quelques minutes.' };
+      const st = lockout.status(user.id);
+      if (st.locked) return { ok: false, status: 423, error: 'Trop d\'essais : patientez avant de réessayer.', retryMs: st.remainingMs };
+      const good = await checkPin(user.pin, current);
+      if (good === null) return busy;
+      if (!good) return { ...failed(user, ip), error: 'PIN actuel incorrect.' };
+      lockout.success(user.id);
+      const record = await pbkdf2(() => hashPin(String(next)));
+      return record ? { ok: true, record } : busy;
     },
     /** Session de la requête (cookie), prolongée à chaque usage ; null si absente, expirée ou compte supprimé. */
     authenticate(req) {

@@ -28,8 +28,10 @@ docker compose up -d --build
 docker compose logs -f mode-stock    # « serveur prêt » ; Ctrl+C pour quitter les journaux
 ```
 
-Ouvrez `https://<DOMAIN>` : l'écran demande le **code d'accès** (`ORG_CODE`), puis connectez-vous avec l'administrateur
-initial. Les variables `BOOTSTRAP_*` ne servent qu'à la première installation : une fois des données présentes, elles sont ignorées.
+Ouvrez `https://<DOMAIN>` : l'écran demande le **code d'accès** (`ORG_CODE`, 8 caractères minimum), puis connectez-vous
+avec l'administrateur initial (PIN de 6 à 8 chiffres). Les variables `BOOTSTRAP_*` ne servent qu'à la première installation :
+**retirez ensuite `BOOTSTRAP_ADMIN_PIN` de `.env`** (un PIN en clair n'a rien à faire sur le disque ; le serveur le signale
+à chaque démarrage tant qu'il est présent).
 
 Pour essayer avant de saisir de vraies données : `DEMO=1` dans `.env` (entrepôt, 3 ateliers, 7 comptes, 16 semaines
 d'activité simulée ; les PIN d'essai sont affichés à la connexion). Ensuite, *Administration → Données → Passer en
@@ -38,7 +40,8 @@ production* efface la démo **sur le serveur** et repart d'un entrepôt central 
 ## 3. Mise en route des sites
 
 1. **Dépôts** (Administration → Dépôts) : l'entrepôt central existe ; créez un dépôt de type *Atelier* par site.
-2. **Comptes** (Administration → Utilisateurs) : un compte par personne, avec son rôle et son dépôt, et un PIN de 4 à 8 chiffres.
+2. **Comptes** (Administration → Utilisateurs) : un compte par personne, avec son rôle et son dépôt, et un PIN de 4 à 8 chiffres
+   (6 au moins pour un administrateur, qui a accès à tout).
    Opérateur : sorties, réceptions, commandes au central, préparation (à l'entrepôt). Responsable : en plus, stock, seuils,
    commandes fournisseurs, rapports. Administrateur : tout, tous les dépôts.
 3. **Catalogue** : import CSV (Administration → Import, modèle téléchargeable), puis emplacements et étiquettes.
@@ -62,8 +65,11 @@ production* efface la démo **sur le serveur** et repart d'un entrepôt central 
 * **Le serveur fait foi** : chaque saisie est réexécutée par le serveur avec les mêmes règles. Si l'état a changé entre-temps
   (ex. deux sites hors ligne sortent la même dernière pièce), la seconde saisie est **refusée et signalée** à son auteur avec
   le motif, et le stock affiché est corrigé. Rien n'est fusionné en silence.
-* **Connexion hors ligne** : possible pour un compte qui s'est déjà connecté en ligne sur cet appareil au cours des 30 derniers
-  jours. La toute première connexion d'un appareil exige le réseau.
+* **Connexion hors ligne** : possible pour un compte qui s'est connecté en ligne sur cet appareil depuis moins de 12 heures
+  et ne s'est pas déconnecté depuis (un verrouillage pour inactivité ne compte pas). La toute première connexion d'un
+  appareil exige le réseau.
+* **Changer son PIN** (Menu → Changer mon PIN) : réseau obligatoire ; le serveur vérifie le PIN actuel et ferme les sessions
+  du compte ouvertes sur les autres appareils.
 * **Sessions** : 12 h sans activité (réglable, `SESSION_HOURS`). Un compte supprimé, ou dont le PIN est changé par un
   administrateur, est déconnecté de tous ses appareils. Les sessions expirées (appareils perdus) sont purgées chaque heure.
 * **Archivage** : les commandes soldées et les transferts terminés depuis plus de 400 jours (`ARCHIVE_DAYS`, 0 = jamais)
@@ -89,8 +95,8 @@ Le profil d'imprimante est réglé **par appareil** (*Menu → Imprimante*) :
 
 Les données sont dans le volume Docker `mode-data` : `snapshot.json` (instantané), `events.jsonl` (journal des opérations
 depuis l'instantané, écrit et synchronisé sur disque avant chaque réponse), `sessions.json`, `backups/` (sauvegardes
-quotidiennes), `archive-history.jsonl` (historique au-delà de 200 000 mouvements), `archive-orders.jsonl` et
-`archive-transfers.jsonl` (documents archivés).
+quotidiennes), `archive-history.jsonl` (historique au-delà de 200 000 mouvements), `archive-audit.jsonl` (journal d'audit
+au-delà de 100 000 entrées : rien n'est jamais effacé), `archive-orders.jsonl` et `archive-transfers.jsonl` (documents archivés).
 
 * **Sauvegardes automatiques** : chaque jour (et au démarrage s'il manque celle du jour), une sauvegarde complète est
   écrite dans `backups/mode-stock-AAAA-MM-JJ.json` ; les 14 derniers jours sont conservés (`BACKUP_KEEP`, 0 = désactivées).
@@ -122,18 +128,40 @@ jamais l'imposer en pleine saisie.
 
 ## 8. Sécurité
 
-* HTTPS obligatoire (Caddy), en-têtes stricts (CSP, `frame-ancestors 'none'`, HSTS, `nosniff`, pas de référent).
-* Le code d'accès protège l'annuaire (liste des comptes) et la connexion ; sans lui, rien n'est exposé.
-* PIN vérifiés par le serveur (PBKDF2), verrouillage progressif par compte (30 s → 15 min) et limitation par adresse IP.
+* HTTPS obligatoire (Caddy), en-têtes stricts (CSP, `frame-ancestors 'none'`, HSTS, `nosniff`, pas de référent), aucune
+  signature logicielle (`Server`, `Via`) dans les réponses.
+* Le code d'accès (8 caractères minimum) protège l'annuaire (liste des comptes) et la connexion ; sans lui, rien n'est exposé.
+* PIN vérifiés par le serveur (PBKDF2), verrouillage progressif par compte (30 s → 15 min, journalisé avec l'adresse) et
+  limitation des échecs par adresse IP — l'adresse est celle vue par Caddy : un en-tête `X-Forwarded-For` fabriqué par le
+  client ne permet pas de contourner la limite.
 * Session : jeton aléatoire de 256 bits dans un cookie `HttpOnly`, `SameSite=Strict`, `Secure` ; le serveur n'en garde que l'empreinte.
 * Écritures : JSON et même origine exigés (protection CSRF) ; chaque opération est contrôlée par les règles métier avec
-  l'identité de la session (jamais celle annoncée par l'appareil).
-* Les appareils ne reçoivent **aucune empreinte de PIN** des autres comptes ; seule la leur est gardée, pour la connexion hors ligne.
+  l'identité de la session (jamais celle annoncée par l'appareil). Les traces de connexion et le changement de PIN ne
+  peuvent venir que du serveur.
+* **Aucune empreinte de PIN ne quitte le serveur.** Pour la connexion hors ligne, l'appareil fabrique son propre
+  vérificateur à partir du PIN saisi ; il expire après 12 heures et s'efface à la déconnexion.
+* Journal d'audit (connexions, comptes, réglages) transmis aux seuls rôles autorisés à le consulter (responsables,
+  administrateurs) ; au-delà de 100 000 entrées, il est archivé sur le serveur, jamais tronqué.
+* Ressources bornées : corps de requête, opérations par envoi et par minute (1 200 par compte, l'appareil réessaie seul),
+  flux temps réel par session et au total, sessions par compte (20), calculs PBKDF2 simultanés (au-delà : « serveur
+  occupé »).
+* Conteneurs : l'application tourne sans privilège (utilisateur `node`, système de fichiers en lecture seule hors du volume
+  de données, aucune capacité noyau, `no-new-privileges`) ; Caddy ne reçoit que `DOMAIN` (ni clé API, ni code d'accès).
 * Clé Anthropic uniquement sur le serveur ; quota quotidien par compte (`AI_DAILY_LIMIT`).
 
-**Limites assumées** : un serveur unique (pas de haute disponibilité : s'il tombe, les sites continuent hors ligne et se
-resynchronisent ensuite) ; un PIN reste court — le code d'accès, le verrouillage et les sessions compensent ; l'empreinte de
-PIN conservée sur un appareil pour la connexion hors ligne reste attaquable par quelqu'un qui dispose de l'appareil déverrouillé.
+**Limites assumées** (détail dans [AUDIT.md](AUDIT.md), passe 5) :
+
+* un serveur unique (pas de haute disponibilité : s'il tombe, les sites continuent hors ligne et se resynchronisent ensuite) ;
+* un PIN reste court : le code d'accès, le verrouillage et les sessions compensent en ligne ; mais le vérificateur hors ligne
+  d'un appareil (comptes connectés depuis moins de 12 h) se devine hors ligne par qui copie le stockage de l'appareil
+  déverrouillé (quelques minutes pour 4 chiffres sur un ordinateur portable) — d'où la durée courte, l'effacement à la
+  déconnexion et le PIN de 6 chiffres des administrateurs ;
+* qui connaît le code d'accès peut tenter des PIN depuis de nombreuses adresses : le verrouillage limite chaque compte à une
+  centaine d'essais par jour, ce qui laisse une chance réelle sur des PIN de 4 chiffres et de nombreux comptes — **changez
+  `ORG_CODE` à chaque départ** et surveillez les « Compte verrouillé » du journal d'audit ;
+* `DEMO=1` affiche les comptes et leurs PIN à la connexion : jamais sur un serveur joignable d'Internet avec de vraies données ;
+* images Docker suivies par version majeure (`node:22-alpine`, `caddy:2`) pour recevoir les correctifs à chaque
+  `docker compose up -d --build` : reconstruire régulièrement (mensuellement au moins).
 
 ## 9. Dépannage
 

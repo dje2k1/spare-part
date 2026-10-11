@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createSyncStore, MAX_OP_AGE_DAYS } from '../../server/sync-store.js';
 import { stateHash, applyPatch, publicDb } from '../../js/core/recorder.js';
 import { demoDb, tempDir, silent, byName, depotByCode, opId } from './helpers.js';
+import { hashPin } from '../../js/core/auth.js';
 
 const userOf = (db, name) => { const u = byName(db, name); return { id: u.id, name: u.name, role: u.role, depotId: u.depotId }; };
 
@@ -170,7 +171,7 @@ test('rattrapage : événements depuis une version, ou instantané si trop ancie
   const { dir, store, db } = await fresh({ keepEvents: 3 });
   const admin = userOf(db, 'Administrateur');
   const paris = depotByCode(db, 'DEP-01').id;
-  const pin = byName(db, 'Julie Laurent').pin;
+  const pin = await hashPin('4567');
   for (let i = 0; i < 5; i++) store.apply({ opId: opId(i), name: 'recordAuth', params: { kind: 'login' }, depotId: paris, at: new Date().toISOString() }, admin);
   assert.deepEqual(store.eventsSince(5), []);
   assert.deepEqual(store.eventsSince(3).map((e) => e.v), [4, 5]);

@@ -2,7 +2,7 @@
 // connexion (en ligne / déverrouillage hors ligne), état de synchronisation (bouton, feuille, bandeaux).
 import { KEYS } from '../core/config.js';
 import { createSyncEngine } from '../core/sync-engine.js';
-import { verifyPin } from '../core/auth.js';
+import { verifyPin, hashPin } from '../core/auth.js';
 import { store, storage, state, setEngine, lockout } from './state.js';
 import { api, apiFetch, apiUrl } from './net.js';
 import { idbReplica } from './idb.js';
@@ -14,7 +14,11 @@ import { setBanner, clearBanner, endSession } from './session.js';
 
 const VERIFY_EVERY = 10 * 60_000;
 const SILENCE_MS = 65_000; // le serveur émet un battement toutes les 25 s : au-delà, la connexion est morte (réseau coupé sans fermeture)
-const KNOWN_TTL = 30 * 86_400_000; // déverrouillage hors ligne possible 30 jours après la dernière connexion en ligne
+// Déverrouillage hors ligne : vérificateur fabriqué SUR l'appareil à partir du PIN saisi (l'empreinte du serveur ne
+// le quitte jamais), valable une journée de travail, effacé par une déconnexion volontaire. Une tablette partagée ne
+// garde donc que les vérificateurs des personnes de la journée encore connectées — un PIN de 4 chiffres reste
+// devinable hors ligne par qui copie l'appareil, d'où cette fenêtre courte.
+const KNOWN_TTL = 12 * 3_600_000;
 const S = { config: null, engine: null, es: null, esTimer: null, esRetry: 0, verifyTimer: null, watchdog: null, seen: 0, logout: Promise.resolve(), wired: false };
 
 const readJson = (key, fallback) => { try { return JSON.parse(storage.getItem(key)) ?? fallback; } catch { return fallback; } };
@@ -25,10 +29,13 @@ export const serverConfig = () => S.config;
 export const orgCode = () => { try { return storage.getItem(KEYS.orgCode) || ''; } catch { return ''; } };
 /** Annuaire de connexion en cache (dépôts, comptes, PIN de démonstration). */
 export const directory = () => readJson(KEYS.syncState, {})?.directory ?? null;
+/** Comptes déverrouillables hors ligne ; les vérificateurs expirés sont EFFACÉS de l'appareil (pas seulement ignorés). */
 const known = () => {
   const all = readJson(KEYS.knownUsers, {});
   const now = Date.now();
-  return Object.fromEntries(Object.entries(all).filter(([, k]) => k && now - (k.at || 0) < KNOWN_TTL));
+  const valid = Object.fromEntries(Object.entries(all).filter(([, k]) => k && now - (k.at || 0) < KNOWN_TTL));
+  if (Object.keys(valid).length !== Object.keys(all).length) writeJson(KEYS.knownUsers, valid);
+  return valid;
 };
 
 // ── Démarrage ──
@@ -52,6 +59,7 @@ export async function detectServer() {
 export async function initServerMode(config) {
   S.config = config;
   state.serverMode = true;
+  known(); // vérificateurs hors ligne expirés effacés dès l'ouverture
   const engine = createSyncEngine({ api, storage, replica: idbReplica, log: console });
   S.engine = engine;
   await engine.init();
@@ -150,8 +158,8 @@ export async function serverLogin(user, pin, depotId) {
   }
   if (r.status !== 200) return { ok: false, error: r.json?.error || 'Connexion refusée.', retryMs: r.json?.retryMs || 0, code: r.json?.code };
   const u = r.json.user;
-  const all = readJson(KEYS.knownUsers, {});
-  all[u.id] = { name: u.name, role: u.role, depotId: u.depotId, pin: r.json.pin, at: Date.now() };
+  const all = known();
+  all[u.id] = { name: u.name, role: u.role, depotId: u.depotId, pin: await hashPin(pin), at: Date.now() };
   writeJson(KEYS.knownUsers, all);
   S.engine.setSession(u.id);
   try {
@@ -167,7 +175,7 @@ export async function serverLogin(user, pin, depotId) {
 async function offlineUnlock(user, pin, depotId) {
   const k = known()[user.id];
   if (!S.engine.db) return { ok: false, error: 'Serveur injoignable : la première connexion de cet appareil nécessite le réseau.' };
-  if (!k?.pin) return { ok: false, error: 'Serveur injoignable, et ce compte ne s\'est jamais connecté sur cet appareil (ou pas depuis 30 jours).' };
+  if (!k?.pin) return { ok: false, error: 'Serveur injoignable, et ce compte ne s\'est pas connecté en ligne sur cet appareil depuis 12 heures (ou s\'est déconnecté).' };
   const st = lockout.status(user.id);
   if (st.locked) return { ok: false, error: 'Trop d\'essais.', retryMs: st.remainingMs };
   if (!(await verifyPin(k.pin, pin))) {
@@ -182,8 +190,16 @@ async function offlineUnlock(user, pin, depotId) {
   return { ok: true, user: u, depotId: u.role === 'admin' && db.depots[depotId] ? depotId : u.depotId, online: false };
 }
 
-/** Déconnexion : les saisies en attente partent d'abord (5 s maximum), puis la session serveur est fermée. */
-export function serverLogout() {
+/**
+ * Déconnexion : les saisies en attente partent d'abord (5 s maximum), puis la session serveur est fermée.
+ * `forget` (déconnexion volontaire) : le vérificateur de PIN de ce compte est effacé de l'appareil ; un
+ * verrouillage pour inactivité le garde (déverrouillage hors ligne possible pendant la journée).
+ */
+export function serverLogout({ forget = false, userId = null } = {}) {
+  if (forget && userId) {
+    const all = readJson(KEYS.knownUsers, {});
+    if (all[userId]) { delete all[userId]; writeJson(KEYS.knownUsers, all); }
+  }
   const engine = S.engine;
   disconnect();
   clearBanner('sync-auth');
@@ -263,13 +279,26 @@ const facade = {
   submit: (name, params, ctx) => S.engine.submit(name, params, ctx),
   status: () => summary(),
   openStatus,
-  ownPin: () => known()[state.session?.user.id]?.pin ?? null,
   rememberPin(pin) {
     const all = readJson(KEYS.knownUsers, {});
     const id = state.session?.user.id;
     if (id && all[id]) { all[id].pin = pin; writeJson(KEYS.knownUsers, all); }
   },
 };
+
+/**
+ * Changement de son PIN en mode serveur : le PIN actuel est vérifié par le serveur, qui calcule l'empreinte.
+ * Réseau obligatoire (aucune file d'attente pour un secret). @returns {Promise<{ok:boolean, error?:string}>}
+ */
+export async function serverChangePin(current, next) {
+  let r;
+  try { r = await apiFetch('pin', { method: 'POST', body: { current, next }, timeout: 15_000 }); } catch {
+    return { ok: false, error: 'Réseau indisponible : changez votre PIN une fois reconnecté.' };
+  }
+  if (r.status !== 200) return { ok: false, error: r.json?.error || `Changement refusé (${r.status}).` };
+  facade.rememberPin(await hashPin(next));
+  return { ok: true };
+}
 
 /** Sauvegarde complète du serveur (administrateur) : téléchargement direct (cookie de session). */
 export function downloadServerBackup() {

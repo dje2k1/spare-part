@@ -1,5 +1,11 @@
 # Proxy HTTPS devant MODE Stock (certificat obtenu et renouvelé automatiquement pour {$DOMAIN}).
 # Le flux temps réel (Server-Sent Events) est transmis sans mise en mémoire tampon par Caddy.
+# Caddy remplace les en-têtes X-Forwarded-* reçus du client par les siens : le serveur lit l'adresse réelle.
 {$DOMAIN} {
+	# Pas de signature du logiciel dans les réponses (information inutile à un attaquant)
+	header {
+		-Server
+		-Via
+	}
 	reverse_proxy mode-stock:8080
 }

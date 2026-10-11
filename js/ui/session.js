@@ -58,10 +58,11 @@ export function startSession(user, depotId) {
  * Ferme la session. `replaceDb` : base à installer (restauration, passage en production) — elle l'est
  * APRÈS avoir détaché la session, sinon l'écouteur du store reverrait une session dont le compte a disparu.
  * `userId` : compte proposé directement à la reconnexion (mode serveur, session expirée).
+ * `forget` : déconnexion volontaire (mode serveur : le vérificateur de PIN hors ligne de ce compte est effacé).
  */
-export function endSession(message = '', { replaceDb = null, userId = null } = {}) {
+export function endSession(message = '', { replaceDb = null, userId = null, forget = false } = {}) {
   if (!state.session) return;
-  if (state.serverMode) serverLogout(); // saisies en attente envoyées, puis session serveur fermée (et journalisée)
+  if (state.serverMode) serverLogout({ forget, userId: state.session.user.id }); // saisies envoyées, puis session serveur fermée (et journalisée)
   else if (!replaceDb) try { run(recordAuth, { kind: 'logout' }); } catch { /* base indisponible : on déconnecte quand même */ }
   state.session = null; // avant tout remplacement : les écouteurs du store (revalidation) ne doivent plus voir de session
   if (replaceDb) store.replace(replaceDb);

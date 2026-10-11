@@ -32,6 +32,13 @@ export async function verifyPin(record, pin) {
   return sameString(r.hash, record.hash);
 }
 
+/**
+ * Nouvelle empreinte acceptable (création d'un compte, changement de PIN) : bien formée ET au coût de calcul
+ * courant. Une empreinte existante plus ancienne reste lisible (isPinRecord), mais aucun appareil ne peut en
+ * imposer une affaiblie (moins d'itérations = PIN plus vite devinable si l'empreinte fuit).
+ */
+export const isStrongPinRecord = (p) => isPinRecord(p) && p.iter >= PBKDF2_ITERATIONS && Number.isInteger(p.len) && p.len >= 4 && p.len <= 8;
+
 /** Empreinte de PIN bien formée (contrôle des données venant d'un autre appareil ou d'une sauvegarde). */
 export function isPinRecord(p) {
   return Boolean(p) && typeof p === 'object' && p.alg === 'PBKDF2-SHA256'
@@ -54,10 +61,17 @@ export async function upgradeLegacyPins(db) {
   return n;
 }
 
-/** Politique de PIN : 4 à 8 chiffres, ni répétés, ni suite évidente. */
-export function pinPolicy(pin) {
+/** Longueur minimale du PIN d'un administrateur (accès à tout : comptes, données, tous les dépôts). */
+export const ADMIN_PIN_MIN = 6;
+
+/**
+ * Politique de PIN : 4 à 8 chiffres (6 au moins pour un administrateur), ni répétés, ni suite évidente.
+ * `role` : rôle du compte qui recevra le PIN (création, modification, changement de son propre PIN).
+ */
+export function pinPolicy(pin, { role } = {}) {
   const p = String(pin ?? '');
   if (!/^\d{4,8}$/.test(p)) return { ok: false, reason: 'Le PIN doit comporter 4 à 8 chiffres.' };
+  if (role === 'admin' && p.length < ADMIN_PIN_MIN) return { ok: false, reason: `Un administrateur doit choisir un PIN de ${ADMIN_PIN_MIN} chiffres ou plus.` };
   if (/^(\d)\1+$/.test(p)) return { ok: false, reason: 'Évitez un PIN composé d\'un seul chiffre répété.' };
   const d = [...p].map(Number);
   const step = d[1] - d[0];

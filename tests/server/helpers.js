@@ -21,9 +21,9 @@ export async function demoDb() {
 export const tempDir = () => mkdtempSync(join(tmpdir(), 'mode-srv-'));
 
 /** Démarre une application. `dir` réutilisable pour tester un redémarrage. */
-export async function startApp({ dir = tempDir(), db, ai, now, storeOptions, sessionHours, backupKeep } = {}) {
+export async function startApp({ dir = tempDir(), db, ai, now, storeOptions, sessionHours, backupKeep, trustProxy, log = silent } = {}) {
   const initial = db ?? (await demoDb());
-  const app = await createApp({ dataDir: dir, staticDir: ROOT, orgCode: ORG, bootstrap: async () => initial, ai, now, log: silent, storeOptions, sessionHours, backupKeep });
+  const app = await createApp({ dataDir: dir, staticDir: ROOT, orgCode: ORG, bootstrap: async () => initial, ai, now, log, storeOptions, sessionHours, backupKeep, trustProxy });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
   return {

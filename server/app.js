@@ -5,6 +5,7 @@
 //   GET  /api/config              mode serveur ? IA disponible ? (sans authentification)
 //   POST /api/directory           annuaire de connexion (dépôts, comptes) contre le code d'accès
 //   POST /api/login | /api/logout session par cookie HttpOnly
+//   POST /api/pin                 changer son PIN (PIN actuel vérifié par le serveur)
 //   GET  /api/session             session en cours
 //   GET  /api/snapshot            état complet (sans PIN) pour un appareil
 //   GET  /api/events?since=v      événements manqués
@@ -40,7 +41,12 @@ const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
   + "connect-src 'self' https://api.anthropic.com; media-src 'self' blob:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; "
   + "form-action 'none'; frame-ancestors 'none'";
 
-const LIMITS = { json: 64 * 1024, ops: 2 * 1024 * 1024, ai: 8 * 1024 * 1024, restore: 30 * 1024 * 1024, opsPerRequest: 200 };
+const LIMITS = { json: 64 * 1024, ops: 2 * 1024 * 1024, ai: 8 * 1024 * 1024, restore: 30 * 1024 * 1024, opsPerRequest: 200, opsPerMinute: 1200, streamsPerSession: 6, streams: 2000 };
+/**
+ * Opérations que seul le serveur émet : une trace de connexion (sinon un appareil pourrait fabriquer ou noyer le
+ * journal d'audit) et le changement de PIN (le PIN actuel doit être vérifié par le serveur : POST /api/pin).
+ */
+export const SERVER_ONLY_OPS = new Set(['recordAuth', 'changeOwnPin']);
 const SERVER_LOGS = { history: 200_000, audit: 100_000 };
 
 class HttpError extends Error {
@@ -58,8 +64,9 @@ class HttpError extends Error {
  * @param {number} [o.backupKeep]       sauvegardes automatiques quotidiennes conservées (0 = désactivées)
  * @param {number} [o.archiveDays]      commandes et transferts terminés depuis plus de N jours archivés (0 = jamais)
  */
-export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {}, trustProxy = false, sessionHours = 12, backupKeep = 14, archiveDays = 400, now = () => new Date(), log = console, storeOptions = {} }) {
-  if (!orgCode || String(orgCode).trim().length < 4) throw new Error('ORG_CODE manquant ou trop court (4 caractères minimum).');
+export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {}, trustProxy = false, sessionHours = 12, backupKeep = 14, archiveDays = 400, minOrgCode = 8, now = () => new Date(), log = console, storeOptions = {} }) {
+  // Le code d'accès est la première barrière face à Internet (annuaire, connexion) : assez long pour ne pas se deviner.
+  if (!orgCode || String(orgCode).trim().length < minOrgCode) throw new Error(`ORG_CODE manquant ou trop court (${minOrgCode} caractères minimum).`);
   const root = resolve(staticDir);
   const store = createSyncStore({ dataDir, now, log, historyMax: SERVER_LOGS.history, auditMax: SERVER_LOGS.audit, ...storeOptions });
   if (!store.load()) {
@@ -83,13 +90,38 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
   const maintenance = setInterval(maintain, 3_600_000);
   maintenance.unref?.();
   const streams = new Set();
-  let snapCache = null; // instantané sérialisé et compressé, réutilisé tant que la version ne change pas
+  /**
+   * Débit d'opérations par compte (fenêtre d'une minute) : chaque opération est écrite et synchronisée sur disque avant
+   * la réponse ; un envoi en boucle ne doit pas monopoliser le serveur. Une file hors ligne de plusieurs jours passe en
+   * quelques minutes : l'appareil réessaie seul après un refus temporaire (429).
+   */
+  const opsSpent = new Map(); // compte → [{ t, n }]
+  function spendOps(userId, n) {
+    const t = now().getTime();
+    const recent = (opsSpent.get(userId) ?? []).filter((x) => t - x.t < 60_000);
+    const used = recent.reduce((sum, x) => sum + x.n, 0);
+    const ok = used + n <= LIMITS.opsPerMinute;
+    if (ok) recent.push({ t, n });
+    opsSpent.set(userId, recent);
+    return ok;
+  }
+  const snapCache = new Map(); // « avec audit ? » → instantané sérialisé et compressé, réutilisé tant que la version ne change pas
 
   // ── Utilitaires de requête ──
   const header = (req, name) => { const v = req.headers[name]; return Array.isArray(v) ? v[0] : v; };
-  const isHttps = (req) => Boolean(req.socket.encrypted) || (trustProxy && header(req, 'x-forwarded-proto')?.split(',')[0].trim() === 'https');
-  const hostOf = (req) => (trustProxy && header(req, 'x-forwarded-host')?.split(',')[0].trim()) || header(req, 'host') || '';
-  const ipOf = (req) => (trustProxy && header(req, 'x-forwarded-for')?.split(',')[0].trim()) || req.socket.remoteAddress || '?';
+  /**
+   * Valeur d'un en-tête X-Forwarded-* posée par LE proxy de confiance (TRUST_PROXY : un seul proxy devant le
+   * serveur) : la plus à droite. Celles de gauche viennent du client et sont falsifiables — les lire permettrait
+   * de changer d'« adresse » à chaque essai et de contourner la limitation des tentatives.
+   */
+  const forwarded = (req, name) => { const v = req.headers[name]; const all = (Array.isArray(v) ? v.join(',') : v ?? '').split(','); return all[all.length - 1].trim(); };
+  const isHttps = (req) => Boolean(req.socket.encrypted) || (trustProxy && forwarded(req, 'x-forwarded-proto') === 'https');
+  const hostOf = (req) => (trustProxy && forwarded(req, 'x-forwarded-host')) || header(req, 'host') || '';
+  const ipOf = (req) => (trustProxy && forwarded(req, 'x-forwarded-for')) || req.socket.remoteAddress || '?';
+  // Journal d'audit (connexions, comptes, réglages) : seulement pour les rôles qui ont le droit de le consulter.
+  const seesAudit = (s) => can(s.user.role, 'audit.view');
+  const forRole = (s, ev) => (seesAudit(s) || !ev.patch?.log?.audit ? ev : { ...ev, patch: { ...ev.patch, log: { ...ev.patch.log, audit: undefined } } });
+  const eventsFor = (s, list) => (list === null ? null : list.map((ev) => forRole(s, ev)));
 
   function securityHeaders(req, res) {
     res.setHeader('Content-Security-Policy', CSP);
@@ -149,6 +181,9 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
     return s;
   }
 
+  /** Compte verrouillé après des PIN erronés : trace dans le journal d'audit (au nom du compte visé). */
+  const recordLockout = (r) => { if (r.lockout) store.serverOp('recordAuth', { kind: 'lockout', failures: r.lockout.failures }, r.lockout.user, r.lockout.user.depotId); };
+
   const cookie = (req, value, maxAge) => `${auth.COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${isHttps(req) ? '; Secure' : ''}`;
 
   // ── Routes ──
@@ -169,9 +204,22 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
     async 'POST /api/login'(req, res) {
       const { json } = await readJson(req, LIMITS.json);
       const r = await auth.login(json ?? {}, ipOf(req));
-      if (!r.ok) throw new HttpError(r.status, r.error, { code: r.status === 403 ? 'org' : 'pin', retryMs: r.retryMs ?? 0 });
+      recordLockout(r);
+      if (!r.ok) throw new HttpError(r.status, r.error, { code: r.status === 403 ? 'org' : r.status === 503 ? 'busy' : 'pin', retryMs: r.retryMs ?? 0 });
       store.serverOp('recordAuth', { kind: 'login' }, r.user, r.depotId);
-      send(req, res, 200, { user: r.user, depotId: r.depotId, pin: r.pin, v: store.version }, { 'Set-Cookie': cookie(req, r.token, sessionHours * 3600) });
+      send(req, res, 200, { user: r.user, depotId: r.depotId, v: store.version }, { 'Set-Cookie': cookie(req, r.token, sessionHours * 3600) });
+    },
+
+    async 'POST /api/pin'(req, res) {
+      const s = session(req);
+      const { json } = await readJson(req, LIMITS.json);
+      const r = await auth.changePin(s, json ?? {}, ipOf(req));
+      recordLockout(r);
+      if (!r.ok) throw new HttpError(r.status, r.error, { code: r.status === 503 ? 'busy' : 'pin', retryMs: r.retryMs ?? 0 });
+      const out = store.serverOp('changeOwnPin', { pin: r.record }, s.user, s.depotId);
+      if (out.status !== 'ok') throw new HttpError(400, out.message || 'PIN refusé.');
+      auth.revokeUser(s.user.id, s.key); // les autres appareils de ce compte doivent se reconnecter
+      send(req, res, 200, { ok: true, v: store.version });
     },
 
     async 'POST /api/logout'(req, res) {
@@ -187,14 +235,19 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
     },
 
     'GET /api/snapshot'(req, res) {
-      session(req);
+      const s = session(req);
       // Après un redémarrage ou une restauration, beaucoup d'appareils le demandent en même temps : une seule sérialisation par version
-      if (snapCache?.v !== store.version) {
-        const json = Buffer.from(JSON.stringify(store.snapshot()));
-        snapCache = { v: store.version, json, gz: gzipSync(json) };
+      const withAudit = seesAudit(s);
+      let cached = snapCache.get(withAudit);
+      if (cached?.v !== store.version) {
+        const snap = store.snapshot();
+        if (!withAudit) snap.db.audit = [];
+        const json = Buffer.from(JSON.stringify(snap));
+        cached = { v: store.version, json, gz: gzipSync(json) };
+        snapCache.set(withAudit, cached);
       }
       const gz = /\bgzip\b/.test(header(req, 'accept-encoding') ?? '');
-      const body = gz ? snapCache.gz : snapCache.json;
+      const body = gz ? cached.gz : cached.json;
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': body.length, ...(gz ? { 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' } : {}) });
       res.end(req.method === 'HEAD' ? undefined : body);
     },
@@ -202,15 +255,18 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
     'GET /api/state'(req, res) { session(req); send(req, res, 200, { v: store.version, hash: store.hash() }); },
 
     'GET /api/events'(req, res, url) {
-      session(req);
-      const events = store.eventsSince(url.searchParams.get('since'));
+      const s = session(req);
+      const events = eventsFor(s, store.eventsSince(url.searchParams.get('since')));
       send(req, res, 200, events === null ? { reset: true, v: store.version } : { events, v: store.version });
     },
 
     'GET /api/stream'(req, res, url) {
-      session(req);
+      const s = session(req);
+      // Flux bornés (mémoire, descripteurs) : par session et au total
+      const mine = [...streams].filter((x) => x.key === s.key).length;
+      if (mine >= LIMITS.streamsPerSession || streams.size >= LIMITS.streams) throw new HttpError(429, 'Trop de connexions temps réel ouvertes.');
       res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
-      const write = (ev) => res.write(ev.reset ? `id: ${ev.v}\nevent: reset\ndata: {"v":${ev.v}}\n\n` : `id: ${ev.v}\nevent: op\ndata: ${JSON.stringify(ev)}\n\n`);
+      const write = (ev) => res.write(ev.reset ? `id: ${ev.v}\nevent: reset\ndata: {"v":${ev.v}}\n\n` : `id: ${ev.v}\nevent: op\ndata: ${JSON.stringify(forRole(s, ev))}\n\n`);
       res.write('retry: 3000\n\n');
       const missed = store.eventsSince(header(req, 'last-event-id') ?? url.searchParams.get('since'));
       if (missed === null) write({ v: store.version, reset: true });
@@ -221,7 +277,7 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
         if (!auth.authenticate(req)) { res.write('event: auth\ndata: {}\n\n'); stop(); return; }
         res.write('event: ping\ndata: {}\n\n'); // visible du client : détection d'une connexion morte
       }, 25_000);
-      const entry = { stop: null };
+      const entry = { stop: null, key: s.key };
       function stop() { clearInterval(beat); unsub(); streams.delete(entry); res.end(); }
       entry.stop = stop;
       streams.add(entry);
@@ -235,13 +291,15 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
       if (json?.userId !== s.user.id) throw new HttpError(409, 'Ces opérations appartiennent à un autre compte.', { code: 'session_mismatch' });
       const list = Array.isArray(json?.ops) ? json.ops : null;
       if (!list || list.length > LIMITS.opsPerRequest) throw new HttpError(400, 'Liste d\'opérations invalide.');
+      if (list.length && !spendOps(s.user.id, list.length)) throw new HttpError(429, 'Trop d\'opérations envoyées en peu de temps : l\'envoi reprend automatiquement dans un instant.', { code: 'rate' });
       const results = [];
       for (const op of list) {
+        if (SERVER_ONLY_OPS.has(op?.name)) { results.push({ opId: op?.opId, status: 'rejected', code: 'forbidden', message: 'Opération réservée au serveur.' }); continue; }
         const r = store.apply({ opId: op?.opId, name: op?.name, params: op?.params, depotId: op?.depotId, at: op?.at }, s.user);
         if (r.status === 'ok') afterOp(op, s);
         results.push(r.status === 'rejected' ? { opId: op?.opId, status: r.status, code: r.code, message: r.message } : { opId: op?.opId, status: r.status, v: r.v });
       }
-      const events = store.eventsSince(json.since);
+      const events = eventsFor(s, store.eventsSince(json.since));
       send(req, res, 200, { results, v: store.version, ...(events === null ? { reset: true } : { events }) });
     },
 
@@ -301,7 +359,6 @@ export async function createApp({ dataDir, staticDir, orgCode, bootstrap, ai = {
     const p = op.params && typeof op.params === 'object' ? op.params : {};
     if (op.name === 'deleteUser') auth.revokeUser(typeof p.id === 'string' ? p.id : String(op.params));
     else if (op.name === 'saveUser' && p.id && p.pin) auth.revokeUser(p.id, p.id === s.user.id ? s.key : null);
-    else if (op.name === 'changeOwnPin') auth.revokeUser(s.user.id, s.key);
   }
 
   // ── Fichiers de l'application ──

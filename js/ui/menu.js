@@ -6,6 +6,7 @@ import { state, db, depot, can, prefs, applyTheme, run, lockout, syncEngine } fr
 import { openDrawer, closeDrawer, openSheet, closeSheet, confirmDialog } from './dialogs.js';
 import { navigate } from './router.js';
 import { endSession } from './session.js';
+import { serverChangePin } from './sync-ui.js';
 import { toast } from './toast.js';
 import { pendingIncoming } from '../core/queries.js';
 import { ROLES, APP_LABEL, APP_VERSION } from '../core/config.js';
@@ -86,7 +87,7 @@ function changePinSheet() {
     title: 'Changer mon PIN',
     body: html`<form class="stack" data-submit="menu.pin.save" novalidate>
       <label class="field"><span class="field__label">PIN actuel</span><input class="input input--mono" name="old" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
-      <label class="field"><span class="field__label">Nouveau PIN (4 à 8 chiffres)</span><input class="input input--mono" name="new" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
+      <label class="field"><span class="field__label">Nouveau PIN (${state.session?.user.role === 'admin' ? '6' : '4'} à 8 chiffres)</span><input class="input input--mono" name="new" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
       <label class="field"><span class="field__label">Confirmer le nouveau PIN</span><input class="input input--mono" name="new2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
       <p class="field__error" data-err role="alert"></p>
       <button type="submit" class="btn btn--primary btn--block">Enregistrer</button></form>`,
@@ -108,17 +109,20 @@ export function initMenu() {
     async 'menu.pin.save'(form) {
       const err = form.querySelector('[data-err]');
       const u = db().users[state.session.user.id];
-      const st = lockout.status(u.id);
-      if (st.locked) { err.textContent = 'Trop d\'essais : patientez avant de réessayer.'; return; }
-      const record = syncEngine()?.ownPin() ?? u.pin;
-      if (!(await verifyPin(record, val(form, 'old')))) { lockout.fail(u.id); err.textContent = 'PIN actuel incorrect.'; return; }
-      lockout.success(u.id);
-      const policy = pinPolicy(val(form, 'new'));
+      const policy = pinPolicy(val(form, 'new'), { role: state.session.user.role });
       if (!policy.ok) { err.textContent = policy.reason; return; }
       if (val(form, 'new') !== val(form, 'new2')) { err.textContent = 'Les deux PIN ne correspondent pas.'; return; }
-      const next = await hashPin(val(form, 'new'));
-      run(changeOwnPin, { pin: next });
-      syncEngine()?.rememberPin(next);
+      if (state.serverMode) {
+        // Le serveur vérifie le PIN actuel et calcule l'empreinte : une session laissée ouverte ne suffit pas
+        const r = await serverChangePin(val(form, 'old'), val(form, 'new'));
+        if (!r.ok) { err.textContent = r.error; return; }
+      } else {
+        const st = lockout.status(u.id);
+        if (st.locked) { err.textContent = 'Trop d\'essais : patientez avant de réessayer.'; return; }
+        if (!(await verifyPin(u.pin, val(form, 'old')))) { lockout.fail(u.id); err.textContent = 'PIN actuel incorrect.'; return; }
+        lockout.success(u.id);
+        run(changeOwnPin, { pin: await hashPin(val(form, 'new')) });
+      }
       await closeSheet();
       toast('PIN modifié.', { tone: 'ok' });
     },
@@ -132,7 +136,7 @@ export function initMenu() {
     },
     async 'menu.logout'() {
       closeDrawer();
-      if (await confirmDialog({ title: 'Se déconnecter ?', confirmLabel: 'Se déconnecter' })) endSession();
+      if (await confirmDialog({ title: 'Se déconnecter ?', confirmLabel: 'Se déconnecter' })) endSession('', { forget: true });
     },
   });
 }

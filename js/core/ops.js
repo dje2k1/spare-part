@@ -8,7 +8,7 @@
 // `ctx = { user:{id,name,role,depotId}, depotId, now:Date, uid?, limits? }`.
 // Les paramètres sont traités comme NON FIABLES (ils peuvent venir d'un appareil distant) : tout est validé.
 import { LIMITS, ROLES, DEPOT_KINDS } from './config.js';
-import { can, isPinRecord } from './auth.js';
+import { can, isStrongPinRecord, ADMIN_PIN_MIN } from './auth.js';
 import { locCode, stockOf, totalStock, levelOf, isLow } from './queries.js';
 import { isCode, nextInternalEan } from '../lib/ean.js';
 import { isImageDataUrl } from '../lib/image.js';
@@ -18,9 +18,18 @@ import {
   fail, own, obj, list, need, depotFor, centralDepot, clean, qtyOf, eanOf, newId, audit, logMove, setStock, addUsage,
 } from './ops-kit.js';
 
-/** Trace de connexion/déconnexion. `kind` borné : aucun texte libre n'entre dans le journal par ce biais. */
+/**
+ * Trace de connexion, de déconnexion ou de verrouillage d'un compte (PIN erronés). `kind` borné : aucun texte
+ * libre n'entre dans le journal par ce biais. Avec un serveur, seul le serveur l'émet (jamais un appareil).
+ */
 export function recordAuth(db, ctx, p) {
-  const kind = obj(p).kind === 'logout' ? 'logout' : 'login';
+  const f = obj(p);
+  if (f.kind === 'lockout') {
+    const n = Math.min(1000, Math.max(0, toInt(f.failures) || 0));
+    audit(db, ctx, 'login', `Compte verrouillé après ${n} PIN erronés : ${ctx.user.name}`, { role: ctx.user.role, failures: n });
+    return;
+  }
+  const kind = f.kind === 'logout' ? 'logout' : 'login';
   audit(db, ctx, 'login', `${kind === 'login' ? 'Connexion' : 'Déconnexion'} de ${ctx.user.name}`, { role: ctx.user.role });
 }
 
@@ -432,12 +441,15 @@ export function saveUser(db, ctx, p) {
   if (!n) fail('Le nom est obligatoire.');
   if (typeof role !== 'string' || !Object.hasOwn(ROLES, role)) fail('Rôle invalide.');
   if (!own(db.depots, depotId)) fail('Dépôt invalide.');
-  if (pin != null && !isPinRecord(pin)) fail('PIN invalide.');
+  if (pin != null && !isStrongPinRecord(pin)) fail('PIN invalide.');
   const existing = id ? own(db.users, id) : null;
   if (id && !existing) fail('Utilisateur introuvable.', 'notfound');
   if (Object.values(db.users).some((u) => u.id !== id && u.name.toLowerCase() === n.toLowerCase())) fail('Un utilisateur porte déjà ce nom.');
   if (!existing && !pin) fail('Un PIN est obligatoire pour un nouvel utilisateur.');
   if (existing && existing.role === 'admin' && role !== 'admin' && adminCount(db) <= 1) fail('Il doit rester au moins un administrateur.');
+  // Un administrateur a accès à tout : PIN plus long (les PIN existants plus courts restent valables jusqu'au prochain changement)
+  if (role === 'admin' && pin && pin.len < ADMIN_PIN_MIN) fail(`Un administrateur doit avoir un PIN de ${ADMIN_PIN_MIN} chiffres ou plus.`);
+  if (role === 'admin' && !pin && existing && existing.role !== 'admin' && !(existing.pin?.len >= ADMIN_PIN_MIN)) fail(`Pour nommer ${n} administrateur, saisissez un nouveau PIN de ${ADMIN_PIN_MIN} chiffres ou plus.`);
   const uidv = existing?.id ?? newId(ctx);
   db.users[uidv] = { id: uidv, name: n, role, depotId, pin: pin ?? existing.pin };
   if (pin && db.meta.demoPins) db.meta.demoPins = db.meta.demoPins.filter((x) => x.name.toLowerCase() !== n.toLowerCase());
@@ -459,9 +471,10 @@ export function deleteUser(db, ctx, p) {
 /** Changement de son propre PIN (l'ancien PIN a été vérifié par l'appelant). `p` : { pin } ou l'empreinte. */
 export function changeOwnPin(db, ctx, p) {
   const pin = p && typeof p === 'object' && 'pin' in p ? p.pin : p;
-  if (!isPinRecord(pin)) fail('PIN invalide.');
+  if (!isStrongPinRecord(pin)) fail('PIN invalide.');
   const u = own(db.users, ctx.user.id);
   if (!u) fail('Utilisateur introuvable.', 'notfound');
+  if (u.role === 'admin' && pin.len < ADMIN_PIN_MIN) fail(`Un administrateur doit avoir un PIN de ${ADMIN_PIN_MIN} chiffres ou plus.`);
   u.pin = pin;
   if (db.meta.demoPins) db.meta.demoPins = db.meta.demoPins.filter((x) => x.name.toLowerCase() !== u.name.toLowerCase());
   audit(db, ctx, 'admin', `PIN modifié : ${u.name}`, {});

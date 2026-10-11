@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hashPin, verifyPin, pinPolicy, can, lockDelay, createLockout, isIdle, upgradeLegacyPins, PBKDF2_ITERATIONS } from '../../js/core/auth.js';
+import { hashPin, verifyPin, pinPolicy, can, lockDelay, createLockout, isIdle, upgradeLegacyPins, isPinRecord, isStrongPinRecord, PBKDF2_ITERATIONS, ADMIN_PIN_MIN } from '../../js/core/auth.js';
 import { PERMISSIONS } from '../../js/core/config.js';
 import { memoryStorage, smallDb } from './helpers.js';
 
@@ -37,6 +37,29 @@ test('pinPolicy', () => {
   const ko = ['123', '123456789', 'abcd', '', '0000', '7777777', '1234', '4321', '56789', '987654', '12 34'];
   for (const p of ok) assert.equal(pinPolicy(p).ok, true, p);
   for (const p of ko) { const r = pinPolicy(p); assert.equal(r.ok, false, p); assert.ok(r.reason); }
+});
+
+test('pinPolicy : 6 chiffres au moins pour un administrateur', () => {
+  assert.equal(ADMIN_PIN_MIN, 6);
+  for (const p of ['2468', '80517']) {
+    assert.equal(pinPolicy(p, { role: 'operator' }).ok, true, p);
+    assert.equal(pinPolicy(p, { role: 'manager' }).ok, true, p);
+    const r = pinPolicy(p, { role: 'admin' });
+    assert.equal(r.ok, false, p);
+    assert.match(r.reason, /administrateur/);
+  }
+  for (const p of ['135790', '9753124', '80517392']) assert.equal(pinPolicy(p, { role: 'admin' }).ok, true, p);
+  for (const p of ['123456', '000000', '987654']) assert.equal(pinPolicy(p, { role: 'admin' }).ok, false, `${p} : évident`);
+});
+
+test('isStrongPinRecord : nouvelle empreinte au coût courant, longueur déclarée cohérente', async () => {
+  const strong = await hashPin('2468');
+  assert.equal(isStrongPinRecord(strong), true);
+  assert.equal(isStrongPinRecord({ ...strong, iter: PBKDF2_ITERATIONS - 1 }), false, 'moins d\'itérations : refusée');
+  assert.equal(isPinRecord({ ...strong, iter: 10_000 }), true, 'une empreinte ancienne reste lisible…');
+  assert.equal(isStrongPinRecord({ ...strong, iter: 10_000 }), false, '…mais ne peut plus être imposée');
+  for (const len of [undefined, 0, 3, 9, 4.5, '4']) assert.equal(isStrongPinRecord({ ...strong, len }), false, `len=${len}`);
+  for (const bad of [null, 'x', { ...strong, alg: 'SHA1' }, { ...strong, hash: '' }, { ...strong, iter: 20_000_000 }]) assert.equal(isStrongPinRecord(bad), false);
 });
 
 test('permissions : matrice par rôle', () => {
